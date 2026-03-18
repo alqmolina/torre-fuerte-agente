@@ -25,8 +25,8 @@ Tu solo respondes preguntas sobre tu negocio. Claude Code se encarga de:
 ### Paso 1: Tu clonas el repo y corres un comando
 
 ```bash
-git clone https://github.com/Hainrixz/claude-agentkit.git
-cd claude-agentkit
+git clone https://github.com/Hainrixz/whatsapp-agentkit.git
+cd whatsapp-agentkit
 bash start.sh
 ```
 
@@ -203,8 +203,8 @@ claude
 
 ```bash
 # 1. Clona el repositorio
-git clone https://github.com/Hainrixz/claude-agentkit.git
-cd claude-agentkit
+git clone https://github.com/Hainrixz/whatsapp-agentkit.git
+cd whatsapp-agentkit
 
 # 2. Verifica tu entorno
 bash start.sh
