@@ -18,7 +18,7 @@ from agent.tools import (
     extraer_marcadores_plano,
     extraer_marcadores_render,
     obtener_plano,
-    obtener_renders,
+    obtener_urls_renders,
 )
 
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
@@ -139,11 +139,9 @@ async def webhook_handler(request: Request):
                     )
 
             for clave in claves_render:
-                archivos = obtener_renders(clave)
-                if archivos:
-                    for ruta_archivo in archivos:
-                        ruta_relativa = os.path.relpath(ruta_archivo, "knowledge/renders")
-                        url = f"{BASE_URL}/renders/{ruta_relativa}"
+                urls = obtener_urls_renders(clave, BASE_URL)
+                if urls:
+                    for url in urls:
                         await proveedor.enviar_media(msg.telefono, url)
                         logger.info(f"Render enviado: {url}")
                         await asyncio.sleep(0.5)

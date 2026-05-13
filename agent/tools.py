@@ -65,8 +65,8 @@ def obtener_plano(codigo_apto: str) -> str | None:
 
 def obtener_renders(clave: str) -> list[str]:
     """
-    Retorna la lista de rutas de archivos de renders dado una clave.
-    Incluye imágenes y videos. Retorna lista vacía si no existe.
+    Retorna rutas locales de renders si existen (desarrollo).
+    En producción los renders se sirven desde RENDERS_BASE_URL.
     """
     clave_norm = clave.lower().replace("apto", "").replace("-", "").replace(" ", "").strip()
     carpeta = MAPA_RENDERS.get(clave_norm)
@@ -83,6 +83,37 @@ def obtener_renders(clave: str) -> list[str]:
         if not f.startswith(".") and os.path.splitext(f)[1].lower() in EXTENSIONES_MEDIA
     ])
     return archivos
+
+
+def obtener_urls_renders(clave: str, base_url: str) -> list[str]:
+    """
+    Retorna URLs públicas de renders usando RENDERS_BASE_URL (producción)
+    o rutas locales convertidas a URL (desarrollo).
+    """
+    renders_base = os.getenv("RENDERS_BASE_URL", "").rstrip("/")
+
+    if renders_base:
+        # Producción: usar URL externa configurada en RENDERS_BASE_URL
+        clave_norm = clave.lower().replace("apto", "").replace("-", "").replace(" ", "").strip()
+        carpeta = MAPA_RENDERS.get(clave_norm)
+        if not carpeta:
+            return []
+        # Retorna las URLs basadas en los nombres de archivo conocidos
+        archivos_locales = obtener_renders(clave)
+        if not archivos_locales:
+            # Si no hay archivos locales, usar lista conocida
+            return []
+        return [
+            f"{renders_base}/{carpeta}/{os.path.basename(f)}"
+            for f in archivos_locales
+        ]
+    else:
+        # Desarrollo: servir desde el servidor local
+        archivos = obtener_renders(clave)
+        return [
+            f"{base_url}/renders/{os.path.relpath(f, RENDERS_DIR)}"
+            for f in archivos
+        ]
 
 
 def extraer_marcadores_plano(texto: str) -> tuple[str, list[str]]:
