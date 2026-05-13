@@ -36,9 +36,14 @@ proveedor = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global proveedor
+
+    # Diagnóstico: mostrar variables de entorno disponibles (solo nombres, no valores secretos)
+    env_keys = list(os.environ.keys())
+    logger.info(f"Variables de entorno disponibles: {env_keys}")
+    logger.info(f"WHATSAPP_PROVIDER = '{os.getenv('WHATSAPP_PROVIDER', 'NO DEFINIDO')}'")
+
     await inicializar_db()
 
-    # Inicializar proveedor aquí para que las variables de entorno estén disponibles
     from agent.providers import obtener_proveedor
     proveedor = obtener_proveedor()
 
