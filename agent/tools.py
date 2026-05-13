@@ -5,9 +5,16 @@ import os
 import re
 import yaml
 import logging
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 
 logger = logging.getLogger("agentkit")
+
+GMAIL_USER = os.getenv("GMAIL_USER", "")
+GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "")
+EMAIL_LEADS = os.getenv("EMAIL_LEADS", "")
 
 PLANOS_DIR = "knowledge/planos"
 RENDERS_DIR = "knowledge/renders"
@@ -108,6 +115,50 @@ def extraer_marcadores_plano(texto: str) -> tuple[str, list[str]]:
     codigos = [m.group(1).strip() for m in patron.finditer(texto)]
     texto_limpio = patron.sub("", texto).strip()
     return texto_limpio, codigos
+
+
+def extraer_marcador_lead(texto: str) -> tuple[str, dict | None]:
+    """Extrae marcador [LEAD:nombre|email] del texto de Claude."""
+    patron = re.compile(r'\[LEAD:([^\]]*)\]', re.IGNORECASE)
+    m = patron.search(texto)
+    if not m:
+        return texto, None
+    partes = [p.strip() for p in m.group(1).split("|")]
+    lead = {
+        "nombre": partes[0] if len(partes) > 0 else "",
+        "email": partes[1] if len(partes) > 1 else "",
+    }
+    texto_limpio = patron.sub("", texto).strip()
+    return texto_limpio, lead if lead["nombre"] else None
+
+
+def enviar_email_lead(telefono: str, nombre: str, email: str = "") -> bool:
+    """Envía notificación de nuevo lead por email."""
+    if not all([GMAIL_USER, GMAIL_APP_PASSWORD, EMAIL_LEADS]):
+        logger.warning("Variables de email no configuradas — lead no notificado por correo")
+        return False
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = GMAIL_USER
+        msg["To"] = EMAIL_LEADS
+        msg["Subject"] = f"Nuevo lead Torre Fuerte — {nombre}"
+        cuerpo = (
+            f"Nuevo lead interesado en Torre Fuerte Apartamentos\n\n"
+            f"Nombre:    {nombre}\n"
+            f"Teléfono:  {telefono}\n"
+            f"Email:     {email or 'No proporcionado'}\n"
+            f"Fecha:     {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+        )
+        msg.attach(MIMEText(cuerpo, "plain"))
+        password = GMAIL_APP_PASSWORD.replace(" ", "")
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(GMAIL_USER, password)
+            server.send_message(msg)
+        logger.info(f"Email de lead enviado: {nombre} ({telefono})")
+        return True
+    except Exception as e:
+        logger.error(f"Error enviando email de lead: {e}")
+        return False
 
 
 def extraer_marcadores_render(texto: str) -> tuple[str, list[str]]:

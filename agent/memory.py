@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import String, Text, DateTime, select, Integer
+from sqlalchemy import String, Text, DateTime, select, Integer, UniqueConstraint
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -32,6 +32,17 @@ class Mensaje(Base):
     role: Mapped[str] = mapped_column(String(20))
     content: Mapped[str] = mapped_column(Text)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class Lead(Base):
+    """Lead registrado durante una conversación."""
+    __tablename__ = "leads"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    telefono: Mapped[str] = mapped_column(String(50), index=True)
+    nombre: Mapped[str] = mapped_column(String(200))
+    email: Mapped[str] = mapped_column(String(200), default="")
+    fecha: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 async def inicializar_db():
@@ -79,6 +90,19 @@ async def obtener_historial(telefono: str, limite: int = 20) -> list[dict]:
             {"role": msg.role, "content": msg.content}
             for msg in mensajes
         ]
+
+
+async def guardar_lead(telefono: str, nombre: str, email: str = ""):
+    """Guarda un lead en la base de datos."""
+    async with async_session() as session:
+        lead = Lead(
+            telefono=telefono,
+            nombre=nombre,
+            email=email,
+            fecha=datetime.utcnow()
+        )
+        session.add(lead)
+        await session.commit()
 
 
 async def limpiar_historial(telefono: str):

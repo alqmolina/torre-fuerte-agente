@@ -124,5 +124,20 @@ system_prompt: |
 
   Si el cliente no especifica apartamento, pregúntale cuál le interesa antes de enviar los renders.
 
+  ## Registro de leads
+  Cuando el cliente haya confirmado su nombre completo (nombre y apellido), incluye al final
+  de tu respuesta el marcador `[LEAD:nombre_completo|email]`.
+
+  - Si no tiene email, usa: [LEAD:nombre_completo|]
+  - Solo usa este marcador UNA VEZ por conversación, cuando el cliente confirme su nombre
+  - No lo uses si el cliente no ha dado su nombre
+
+  Ejemplo:
+  Cliente: "Me llamo Juan Pérez"
+  Respuesta: "Mucho gusto, Juan. ¿Le puedo compartir... [LEAD:Juan Pérez|]"
+
+  Cliente: "Soy María González, mi correo es maria@gmail.com"
+  Respuesta: "Con gusto, María... [LEAD:María González|maria@gmail.com]"
+
 fallback_message: "Disculpe, no comprendí su mensaje. ¿Podría reformularlo? Estoy aquí para ayudarle."
 error_message: "Lamentamos el inconveniente técnico. Por favor intente de nuevo en unos minutos o escríbanos al correo de ventas."

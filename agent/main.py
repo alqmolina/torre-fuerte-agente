@@ -13,12 +13,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from agent.brain import generar_respuesta
-from agent.memory import inicializar_db, guardar_mensaje, obtener_historial
+from agent.memory import inicializar_db, guardar_mensaje, obtener_historial, guardar_lead
 from agent.tools import (
     extraer_marcadores_plano,
     extraer_marcadores_render,
+    extraer_marcador_lead,
     obtener_plano,
     obtener_urls_renders,
+    enviar_email_lead,
 )
 
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
@@ -118,7 +120,8 @@ async def webhook_handler(request: Request):
             respuesta_raw = await generar_respuesta(msg.texto, historial)
 
             texto_sin_planos, codigos_plano = extraer_marcadores_plano(respuesta_raw)
-            texto_limpio, claves_render = extraer_marcadores_render(texto_sin_planos)
+            texto_sin_renders, claves_render = extraer_marcadores_render(texto_sin_planos)
+            texto_limpio, lead_data = extraer_marcador_lead(texto_sin_renders)
 
             await guardar_mensaje(msg.telefono, "user", msg.texto)
             await guardar_mensaje(msg.telefono, "assistant", texto_limpio)
@@ -147,6 +150,11 @@ async def webhook_handler(request: Request):
                         await asyncio.sleep(0.5)
                 else:
                     await proveedor.enviar_mensaje(msg.telefono, "Lo siento, no encontré renders para esa opción.")
+
+            if lead_data:
+                await guardar_lead(msg.telefono, lead_data["nombre"], lead_data.get("email", ""))
+                enviar_email_lead(msg.telefono, lead_data["nombre"], lead_data.get("email", ""))
+                logger.info(f"Lead registrado: {lead_data['nombre']} ({msg.telefono})")
 
             logger.info(f"Respuesta enviada a {msg.telefono}")
 
