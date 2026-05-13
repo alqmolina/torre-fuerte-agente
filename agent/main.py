@@ -10,9 +10,10 @@ from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
+load_dotenv()
+
 from agent.brain import generar_respuesta
 from agent.memory import inicializar_db, guardar_mensaje, obtener_historial
-from agent.providers import obtener_proveedor
 from agent.tools import (
     extraer_marcadores_plano,
     extraer_marcadores_render,
@@ -20,22 +21,27 @@ from agent.tools import (
     obtener_renders,
 )
 
-load_dotenv()
-
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 log_level = logging.DEBUG if ENVIRONMENT == "development" else logging.INFO
 logging.basicConfig(level=log_level)
 logger = logging.getLogger("agentkit")
 
-proveedor = obtener_proveedor()
 PORT = int(os.getenv("PORT", 8000))
 BASE_URL = os.getenv("BASE_URL", f"http://localhost:{PORT}")
+
+# El proveedor se inicializa en lifespan, no al importar el módulo
+proveedor = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Inicializa la base de datos al arrancar el servidor."""
+    global proveedor
     await inicializar_db()
+
+    # Inicializar proveedor aquí para que las variables de entorno estén disponibles
+    from agent.providers import obtener_proveedor
+    proveedor = obtener_proveedor()
+
     logger.info("Base de datos inicializada")
     logger.info(f"Servidor corriendo en puerto {PORT}")
     logger.info(f"Proveedor: {proveedor.__class__.__name__}")
@@ -58,7 +64,26 @@ if os.path.exists("knowledge/renders"):
 
 @app.get("/")
 async def health_check():
-    return {"status": "ok", "service": "torre-fuerte-agente"}
+    return {
+        "status": "ok",
+        "service": "torre-fuerte-agente",
+        "proveedor": proveedor.__class__.__name__ if proveedor else "no iniciado",
+    }
+
+
+@app.get("/debug")
+async def debug():
+    """Diagnóstico: muestra variables de entorno relevantes (sin valores secretos)."""
+    return {
+        "WHATSAPP_PROVIDER": os.getenv("WHATSAPP_PROVIDER", "NO CONFIGURADO"),
+        "ENVIRONMENT": os.getenv("ENVIRONMENT", "NO CONFIGURADO"),
+        "BASE_URL": os.getenv("BASE_URL", "NO CONFIGURADO"),
+        "ANTHROPIC_API_KEY": "configurado" if os.getenv("ANTHROPIC_API_KEY") else "NO CONFIGURADO",
+        "TWILIO_ACCOUNT_SID": "configurado" if os.getenv("TWILIO_ACCOUNT_SID") else "NO CONFIGURADO",
+        "TWILIO_AUTH_TOKEN": "configurado" if os.getenv("TWILIO_AUTH_TOKEN") else "NO CONFIGURADO",
+        "TWILIO_PHONE_NUMBER": os.getenv("TWILIO_PHONE_NUMBER", "NO CONFIGURADO"),
+        "PORT": os.getenv("PORT", "NO CONFIGURADO"),
+    }
 
 
 @app.get("/webhook")
@@ -87,18 +112,15 @@ async def webhook_handler(request: Request):
             historial = await obtener_historial(msg.telefono)
             respuesta_raw = await generar_respuesta(msg.texto, historial)
 
-            # Extraer marcadores de planos y renders
             texto_sin_planos, codigos_plano = extraer_marcadores_plano(respuesta_raw)
             texto_limpio, claves_render = extraer_marcadores_render(texto_sin_planos)
 
             await guardar_mensaje(msg.telefono, "user", msg.texto)
             await guardar_mensaje(msg.telefono, "assistant", texto_limpio)
 
-            # Enviar respuesta de texto
             if texto_limpio:
                 await proveedor.enviar_mensaje(msg.telefono, texto_limpio)
 
-            # Enviar planos
             for codigo in codigos_plano:
                 ruta = obtener_plano(codigo)
                 if ruta:
@@ -108,25 +130,20 @@ async def webhook_handler(request: Request):
                 else:
                     await proveedor.enviar_mensaje(
                         msg.telefono,
-                        f"Lo siento, no encontré el plano del apartamento {codigo}. Le recomendamos contactar a nuestro equipo de ventas."
+                        f"Lo siento, no encontré el plano del apartamento {codigo}."
                     )
 
-            # Enviar renders (imagen por imagen con pausa para no saturar Twilio)
             for clave in claves_render:
                 archivos = obtener_renders(clave)
                 if archivos:
                     for ruta_archivo in archivos:
-                        # Construir URL relativa a /renders
                         ruta_relativa = os.path.relpath(ruta_archivo, "knowledge/renders")
                         url = f"{BASE_URL}/renders/{ruta_relativa}"
                         await proveedor.enviar_media(msg.telefono, url)
                         logger.info(f"Render enviado: {url}")
-                        await asyncio.sleep(0.5)  # pausa entre envíos para no saturar la API
+                        await asyncio.sleep(0.5)
                 else:
-                    await proveedor.enviar_mensaje(
-                        msg.telefono,
-                        "Lo siento, no encontré renders para esa opción."
-                    )
+                    await proveedor.enviar_mensaje(msg.telefono, "Lo siento, no encontré renders para esa opción.")
 
             logger.info(f"Respuesta enviada a {msg.telefono}")
 
