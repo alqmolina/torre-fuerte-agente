@@ -40,7 +40,18 @@ MAPA_PLANOS = {
     "todos": "torre-fuerte-Aptos-todo.pdf",
 }
 
-# Carpeta de renders por clave normalizada
+# URLs públicas de renders en GitHub Releases
+_BASE = "https://github.com/alqmolina/torre-fuerte-agente/releases/download/renders-v1"
+MAPA_RENDERS_URLS = {
+    "401":        [f"{_BASE}/apt401_Torre_Fuerte_0{i}.jpg" for i in range(1, 9)] +
+                  [f"{_BASE}/apt401_Video_apto_D401.mp4"],
+    "penthouse":  [f"{_BASE}/ph1111_PH_{i:02d}.png" for i in range(1, 17)],
+    "penthouse1111": [f"{_BASE}/ph1111_PH_{i:02d}.png" for i in range(1, 17)],
+    "ph1111":     [f"{_BASE}/ph1111_PH_{i:02d}.png" for i in range(1, 17)],
+    "1111":       [f"{_BASE}/ph1111_PH_{i:02d}.png" for i in range(1, 17)],
+}
+
+# Carpeta local de renders (solo para test_local.py)
 MAPA_RENDERS = {
     "401": "render-401",
     "penthouse": "penthouse-1111",
@@ -85,35 +96,10 @@ def obtener_renders(clave: str) -> list[str]:
     return archivos
 
 
-def obtener_urls_renders(clave: str, base_url: str) -> list[str]:
-    """
-    Retorna URLs públicas de renders usando RENDERS_BASE_URL (producción)
-    o rutas locales convertidas a URL (desarrollo).
-    """
-    renders_base = os.getenv("RENDERS_BASE_URL", "").rstrip("/")
-
-    if renders_base:
-        # Producción: usar URL externa configurada en RENDERS_BASE_URL
-        clave_norm = clave.lower().replace("apto", "").replace("-", "").replace(" ", "").strip()
-        carpeta = MAPA_RENDERS.get(clave_norm)
-        if not carpeta:
-            return []
-        # Retorna las URLs basadas en los nombres de archivo conocidos
-        archivos_locales = obtener_renders(clave)
-        if not archivos_locales:
-            # Si no hay archivos locales, usar lista conocida
-            return []
-        return [
-            f"{renders_base}/{carpeta}/{os.path.basename(f)}"
-            for f in archivos_locales
-        ]
-    else:
-        # Desarrollo: servir desde el servidor local
-        archivos = obtener_renders(clave)
-        return [
-            f"{base_url}/renders/{os.path.relpath(f, RENDERS_DIR)}"
-            for f in archivos
-        ]
+def obtener_urls_renders(clave: str, base_url: str = "") -> list[str]:
+    """Retorna URLs públicas de renders desde GitHub Releases."""
+    clave_norm = clave.lower().replace("apto", "").replace("-", "").replace(" ", "").strip()
+    return MAPA_RENDERS_URLS.get(clave_norm, [])
 
 
 def extraer_marcadores_plano(texto: str) -> tuple[str, list[str]]:
