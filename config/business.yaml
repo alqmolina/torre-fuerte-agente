@@ -1,0 +1,24 @@
+# Configuración del negocio — Generado por AgentKit
+negocio:
+  nombre: "TORRE FUERTE APARTAMENTOS"
+  descripcion: >
+    Torre Fuerte es un proyecto residencial de lujo ubicado en Laureles, Medellín,
+    desarrollado por CUATRO ONCE y construido por Laureles 21. Es un edificio exclusivo
+    de solo 21 apartamentos, pensado para quienes buscan vivir o invertir en uno de los
+    sectores más tradicionales, valorizados y apetecidos de Medellín.
+  horario: "Lunes a domingo, 24/7"
+  ubicacion: "Laureles, Medellín, Colombia"
+  desarrollador: "CUATRO ONCE"
+  constructor: "Laureles 21"
+
+agente:
+  nombre: "Torre Fuerte"
+  tono: "Profesional y formal"
+  casos_de_uso:
+    - "Calificar y atender leads / ventas"
+    - "Responder preguntas frecuentes"
+    - "Agendar citas o visitas al proyecto"
+
+metadata:
+  creado: "2026-05-12"
+  version: "1.0"
