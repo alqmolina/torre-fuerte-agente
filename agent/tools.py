@@ -115,7 +115,7 @@ def extraer_marcadores_plano(texto: str) -> tuple[str, list[str]]:
 
 
 def extraer_marcador_lead(texto: str) -> tuple[str, dict | None]:
-    """Extrae marcador [LEAD:nombre|email] del texto de Claude."""
+    """Extrae marcador [LEAD:nombre|email|apto|habitaciones] del texto de Claude."""
     patron = re.compile(r'\[LEAD:([^\]]*)\]', re.IGNORECASE)
     m = patron.search(texto)
     if not m:
@@ -124,12 +124,14 @@ def extraer_marcador_lead(texto: str) -> tuple[str, dict | None]:
     lead = {
         "nombre": partes[0] if len(partes) > 0 else "",
         "email": partes[1] if len(partes) > 1 else "",
+        "apto": partes[2] if len(partes) > 2 else "",
+        "habitaciones": partes[3] if len(partes) > 3 else "",
     }
     texto_limpio = patron.sub("", texto).strip()
     return texto_limpio, lead if lead["nombre"] else None
 
 
-def enviar_email_lead(telefono: str, nombre: str, email: str = "") -> bool:
+def enviar_email_lead(telefono: str, nombre: str, email: str = "", apto: str = "", habitaciones: str = "") -> bool:
     """Envía notificación de nuevo lead via Resend API."""
     if not all([RESEND_API_KEY, EMAIL_LEADS]):
         logger.warning("RESEND_API_KEY o EMAIL_LEADS no configurados")
@@ -137,10 +139,12 @@ def enviar_email_lead(telefono: str, nombre: str, email: str = "") -> bool:
     try:
         cuerpo = (
             f"Nuevo lead interesado en Torre Fuerte Apartamentos\n\n"
-            f"Nombre:    {nombre}\n"
-            f"Teléfono:  {telefono}\n"
-            f"Email:     {email or 'No proporcionado'}\n"
-            f"Fecha:     {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+            f"Nombre:         {nombre}\n"
+            f"Teléfono:       {telefono}\n"
+            f"Email:          {email or 'No proporcionado'}\n"
+            f"Apto interés:   {apto or 'No especificado'}\n"
+            f"Habitaciones:   {habitaciones or 'No especificado'}\n"
+            f"Fecha:          {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
         )
         r = httpx.post(
             "https://api.resend.com/emails",

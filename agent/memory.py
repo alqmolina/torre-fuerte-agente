@@ -39,9 +39,11 @@ class Lead(Base):
     __tablename__ = "leads"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    telefono: Mapped[str] = mapped_column(String(50), index=True)
+    telefono: Mapped[str] = mapped_column(String(50), index=True, unique=True)
     nombre: Mapped[str] = mapped_column(String(200))
     email: Mapped[str] = mapped_column(String(200), default="")
+    apto: Mapped[str] = mapped_column(String(100), default="")
+    habitaciones: Mapped[str] = mapped_column(String(50), default="")
     fecha: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -92,13 +94,22 @@ async def obtener_historial(telefono: str, limite: int = 20) -> list[dict]:
         ]
 
 
-async def guardar_lead(telefono: str, nombre: str, email: str = ""):
-    """Guarda un lead en la base de datos."""
+async def lead_existe(telefono: str) -> bool:
+    """Verifica si ya existe un lead registrado para este teléfono."""
+    async with async_session() as session:
+        result = await session.execute(select(Lead).where(Lead.telefono == telefono))
+        return result.scalar_one_or_none() is not None
+
+
+async def guardar_lead(telefono: str, nombre: str, email: str = "", apto: str = "", habitaciones: str = ""):
+    """Guarda un lead en la base de datos (solo una vez por teléfono)."""
     async with async_session() as session:
         lead = Lead(
             telefono=telefono,
             nombre=nombre,
             email=email,
+            apto=apto,
+            habitaciones=habitaciones,
             fecha=datetime.utcnow()
         )
         session.add(lead)
