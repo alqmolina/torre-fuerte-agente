@@ -44,6 +44,8 @@ class Lead(Base):
     email: Mapped[str] = mapped_column(String(200), default="")
     apto: Mapped[str] = mapped_column(String(100), default="")
     habitaciones: Mapped[str] = mapped_column(String(50), default="")
+    temperatura: Mapped[str] = mapped_column(String(20), default="")
+    intencion: Mapped[str] = mapped_column(String(50), default="")
     fecha: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -101,7 +103,7 @@ async def lead_existe(telefono: str) -> bool:
         return result.scalar_one_or_none() is not None
 
 
-async def guardar_lead(telefono: str, nombre: str, email: str = "", apto: str = "", habitaciones: str = ""):
+async def guardar_lead(telefono: str, nombre: str, email: str = "", apto: str = "", habitaciones: str = "", temperatura: str = "", intencion: str = ""):
     """Guarda un lead en la base de datos (solo una vez por teléfono)."""
     async with async_session() as session:
         lead = Lead(
@@ -110,6 +112,8 @@ async def guardar_lead(telefono: str, nombre: str, email: str = "", apto: str = 
             email=email,
             apto=apto,
             habitaciones=habitaciones,
+            temperatura=temperatura,
+            intencion=intencion,
             fecha=datetime.utcnow()
         )
         session.add(lead)

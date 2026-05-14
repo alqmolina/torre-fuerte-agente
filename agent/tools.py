@@ -115,7 +115,7 @@ def extraer_marcadores_plano(texto: str) -> tuple[str, list[str]]:
 
 
 def extraer_marcador_lead(texto: str) -> tuple[str, dict | None]:
-    """Extrae marcador [LEAD:nombre|email|apto|habitaciones] del texto de Claude."""
+    """Extrae marcador [LEAD:nombre|email|apto|habitaciones|temperatura|intencion]."""
     patron = re.compile(r'\[LEAD:([^\]]*)\]', re.IGNORECASE)
     m = patron.search(texto)
     if not m:
@@ -126,17 +126,24 @@ def extraer_marcador_lead(texto: str) -> tuple[str, dict | None]:
         "email": partes[1] if len(partes) > 1 else "",
         "apto": partes[2] if len(partes) > 2 else "",
         "habitaciones": partes[3] if len(partes) > 3 else "",
+        "temperatura": partes[4] if len(partes) > 4 else "",
+        "intencion": partes[5] if len(partes) > 5 else "",
     }
     texto_limpio = patron.sub("", texto).strip()
     return texto_limpio, lead if lead["nombre"] else None
 
 
-def enviar_email_lead(telefono: str, nombre: str, email: str = "", apto: str = "", habitaciones: str = "") -> bool:
+ICONOS_TEMPERATURA = {"caliente": "🔥", "tibio": "🌡️", "frío": "❄️"}
+
+
+def enviar_email_lead(telefono: str, nombre: str, email: str = "", apto: str = "", habitaciones: str = "", temperatura: str = "", intencion: str = "") -> bool:
     """Envía notificación de nuevo lead via Resend API."""
     if not all([RESEND_API_KEY, EMAIL_LEADS]):
         logger.warning("RESEND_API_KEY o EMAIL_LEADS no configurados")
         return False
     try:
+        icono = ICONOS_TEMPERATURA.get(temperatura.lower(), "")
+        temp_texto = f"{icono} {temperatura.upper()}" if temperatura else "No determinada"
         cuerpo = (
             f"Nuevo lead interesado en Torre Fuerte Apartamentos\n\n"
             f"Nombre:         {nombre}\n"
@@ -144,6 +151,8 @@ def enviar_email_lead(telefono: str, nombre: str, email: str = "", apto: str = "
             f"Email:          {email or 'No proporcionado'}\n"
             f"Apto interés:   {apto or 'No especificado'}\n"
             f"Habitaciones:   {habitaciones or 'No especificado'}\n"
+            f"Intención:      {intencion or 'No especificada'}\n"
+            f"Temperatura:    {temp_texto}\n"
             f"Fecha:          {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
         )
         r = httpx.post(
@@ -152,7 +161,7 @@ def enviar_email_lead(telefono: str, nombre: str, email: str = "", apto: str = "
             json={
                 "from": "Torre Fuerte <onboarding@resend.dev>",
                 "to": [EMAIL_LEADS],
-                "subject": f"Nuevo lead Torre Fuerte — {nombre}",
+                "subject": f"[{temp_texto}] Nuevo lead Torre Fuerte — {nombre}",
                 "text": cuerpo,
             },
             timeout=15,

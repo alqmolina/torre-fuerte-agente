@@ -158,6 +158,8 @@ async def webhook_handler(request: Request):
                     lead_data.get("email", ""),
                     lead_data.get("apto", ""),
                     lead_data.get("habitaciones", ""),
+                    lead_data.get("temperatura", ""),
+                    lead_data.get("intencion", ""),
                 )
                 enviar_email_lead(
                     msg.telefono,
@@ -165,6 +167,8 @@ async def webhook_handler(request: Request):
                     lead_data.get("email", ""),
                     lead_data.get("apto", ""),
                     lead_data.get("habitaciones", ""),
+                    lead_data.get("temperatura", ""),
+                    lead_data.get("intencion", ""),
                 )
                 logger.info(f"Lead registrado: {lead_data['nombre']} ({msg.telefono})")
 
