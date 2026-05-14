@@ -151,7 +151,10 @@ def enviar_email_lead(telefono: str, nombre: str, email: str = "") -> bool:
         )
         msg.attach(MIMEText(cuerpo, "plain"))
         password = GMAIL_APP_PASSWORD.replace(" ", "")
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
             server.login(GMAIL_USER, password)
             server.send_message(msg)
         logger.info(f"Email de lead enviado: {nombre} ({telefono})")
