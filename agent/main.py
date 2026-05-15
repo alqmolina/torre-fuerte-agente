@@ -86,9 +86,11 @@ async def debug():
         "ENVIRONMENT": os.getenv("ENVIRONMENT", "NO CONFIGURADO"),
         "BASE_URL": os.getenv("BASE_URL", "NO CONFIGURADO"),
         "ANTHROPIC_API_KEY": "configurado" if os.getenv("ANTHROPIC_API_KEY") else "NO CONFIGURADO",
-        "TWILIO_ACCOUNT_SID": "configurado" if os.getenv("TWILIO_ACCOUNT_SID") else "NO CONFIGURADO",
-        "TWILIO_AUTH_TOKEN": "configurado" if os.getenv("TWILIO_AUTH_TOKEN") else "NO CONFIGURADO",
-        "TWILIO_PHONE_NUMBER": os.getenv("TWILIO_PHONE_NUMBER", "NO CONFIGURADO"),
+        "META_PHONE_NUMBER_ID": os.getenv("META_PHONE_NUMBER_ID", "NO CONFIGURADO"),
+        "META_VERIFY_TOKEN": os.getenv("META_VERIFY_TOKEN", "NO CONFIGURADO"),
+        "META_ACCESS_TOKEN": "configurado" if os.getenv("META_ACCESS_TOKEN") else "NO CONFIGURADO",
+        "RESEND_API_KEY": "configurado" if os.getenv("RESEND_API_KEY") else "NO CONFIGURADO",
+        "EMAIL_LEADS": os.getenv("EMAIL_LEADS", "NO CONFIGURADO"),
         "PORT": os.getenv("PORT", "NO CONFIGURADO"),
     }
 
