@@ -39,13 +39,14 @@ def obtener_mensaje_fallback() -> str:
     return config.get("fallback_message", "Disculpa, no entendí tu mensaje. ¿Podrías reformularlo?")
 
 
-async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
+async def generar_respuesta(mensaje: str, historial: list[dict], perfil: dict | None = None) -> str:
     """
     Genera una respuesta usando Claude API.
 
     Args:
         mensaje: El mensaje nuevo del usuario
         historial: Lista de mensajes anteriores [{"role": "user/assistant", "content": "..."}]
+        perfil: Datos del lead si ya ha contactado antes (nombre, intereses, etc.)
 
     Returns:
         La respuesta generada por Claude
@@ -54,6 +55,18 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
         return obtener_mensaje_fallback()
 
     system_prompt = cargar_system_prompt()
+
+    if perfil and perfil.get("nombre"):
+        datos = (
+            f"\n\n## Cliente actual (lead conocido)\n"
+            f"Este cliente ya ha contactado antes. Salúdale por su nombre y retoma desde sus intereses previos.\n"
+            f"- Nombre: {perfil['nombre']}\n"
+            f"- Apto de interés: {perfil['apto'] or 'No especificado'}\n"
+            f"- Habitaciones: {perfil['habitaciones'] or 'No especificado'}\n"
+            f"- Intención: {perfil['intencion'] or 'No especificada'}\n"
+            f"- Primera consulta: {perfil['fecha']}\n"
+        )
+        system_prompt += datos
 
     mensajes = []
     for msg in historial:

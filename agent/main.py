@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from agent.brain import generar_respuesta
-from agent.memory import inicializar_db, guardar_mensaje, obtener_historial, guardar_lead, lead_existe
+from agent.memory import inicializar_db, guardar_mensaje, obtener_historial, guardar_lead, lead_existe, obtener_perfil_lead
 from agent.tools import (
     extraer_marcadores_plano,
     extraer_marcadores_render,
@@ -119,7 +119,8 @@ async def webhook_handler(request: Request):
             logger.info(f"Mensaje de {msg.telefono}: {msg.texto}")
 
             historial = await obtener_historial(msg.telefono)
-            respuesta_raw = await generar_respuesta(msg.texto, historial)
+            perfil = await obtener_perfil_lead(msg.telefono)
+            respuesta_raw = await generar_respuesta(msg.texto, historial, perfil)
 
             texto_sin_planos, codigos_plano = extraer_marcadores_plano(respuesta_raw)
             texto_sin_renders, claves_render = extraer_marcadores_render(texto_sin_planos)

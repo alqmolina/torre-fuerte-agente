@@ -68,7 +68,25 @@ async def guardar_mensaje(telefono: str, role: str, content: str):
         await session.commit()
 
 
-async def obtener_historial(telefono: str, limite: int = 20) -> list[dict]:
+async def obtener_perfil_lead(telefono: str) -> dict | None:
+    """Retorna el perfil guardado de un lead conocido, o None si es nuevo."""
+    async with async_session() as session:
+        result = await session.execute(select(Lead).where(Lead.telefono == telefono))
+        lead = result.scalar_one_or_none()
+        if not lead:
+            return None
+        return {
+            "nombre": lead.nombre,
+            "email": lead.email,
+            "apto": lead.apto,
+            "habitaciones": lead.habitaciones,
+            "temperatura": lead.temperatura,
+            "intencion": lead.intencion,
+            "fecha": lead.fecha.strftime("%Y-%m-%d"),
+        }
+
+
+async def obtener_historial(telefono: str, limite: int = 50) -> list[dict]:
     """
     Recupera los últimos N mensajes de una conversación.
 
