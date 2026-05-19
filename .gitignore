@@ -17,6 +17,12 @@ knowledge/*
 !knowledge/.gitkeep
 !knowledge/planos/
 knowledge/renders/
+!knowledge/renders/
+!knowledge/renders/render-401/
+knowledge/renders/render-401/*.mp4
+!knowledge/renders/render-401/*.jpg
+!knowledge/renders/penthouse-1111/
+!knowledge/renders/penthouse-1111/*.png
 
 # Session state
 config/session.yaml

@@ -44,21 +44,26 @@ MAPA_PLANOS = {
     "todos": "torre-fuerte-Aptos-todo.pdf",
 }
 
-# URLs públicas de renders en GitHub Releases
-_BASE = "https://github.com/alqmolina/torre-fuerte-agente/releases/download/renders-v1"
+# URLs de renders — imágenes servidas desde Railway, penthouse desde GitHub Releases
+_BASE_GH = "https://github.com/alqmolina/torre-fuerte-agente/releases/download/renders-v1"
+_RENDERS_401 = [
+    "Renders-TF.jpg",
+    "sala.jpg",
+    "sala-comedor.jpg",
+    "cocina.jpg",
+    "bano.jpg",
+    "hab1.jpg",
+    "hab2.jpg",
+]
+
+def _urls_401(base_url: str) -> list[str]:
+    return [f"{base_url}/renders/render-401/{f}" for f in _RENDERS_401]
+
 MAPA_RENDERS_URLS = {
-    "401":        [f"{_BASE}/apt401_Renders-TF.jpg",
-                   f"{_BASE}/apt401_sala.jpg",
-                   f"{_BASE}/apt401_sala-comedor.jpg",
-                   f"{_BASE}/apt401_cocina.jpg",
-                   f"{_BASE}/apt401_bano.jpg",
-                   f"{_BASE}/apt401_hab1.jpg",
-                   f"{_BASE}/apt401_hab2.jpg",
-                   f"{_BASE}/apt401_Video_apto_D401.mp4"],
-    "penthouse":  [f"{_BASE}/ph1111_PH_{i:02d}.png" for i in range(1, 17)],
-    "penthouse1111": [f"{_BASE}/ph1111_PH_{i:02d}.png" for i in range(1, 17)],
-    "ph1111":     [f"{_BASE}/ph1111_PH_{i:02d}.png" for i in range(1, 17)],
-    "1111":       [f"{_BASE}/ph1111_PH_{i:02d}.png" for i in range(1, 17)],
+    "penthouse":     [f"{_BASE_GH}/ph1111_PH_{i:02d}.png" for i in range(1, 17)],
+    "penthouse1111": [f"{_BASE_GH}/ph1111_PH_{i:02d}.png" for i in range(1, 17)],
+    "ph1111":        [f"{_BASE_GH}/ph1111_PH_{i:02d}.png" for i in range(1, 17)],
+    "1111":          [f"{_BASE_GH}/ph1111_PH_{i:02d}.png" for i in range(1, 17)],
 }
 
 # Carpeta local de renders (solo para test_local.py)
@@ -107,8 +112,10 @@ def obtener_renders(clave: str) -> list[str]:
 
 
 def obtener_urls_renders(clave: str, base_url: str = "") -> list[str]:
-    """Retorna URLs públicas de renders desde GitHub Releases."""
+    """Retorna URLs de renders. Apt 401 se sirve desde Railway; penthouse desde GitHub Releases."""
     clave_norm = clave.lower().replace("apto", "").replace("-", "").replace(" ", "").strip()
+    if clave_norm == "401":
+        return _urls_401(base_url)
     return MAPA_RENDERS_URLS.get(clave_norm, [])
 
 
