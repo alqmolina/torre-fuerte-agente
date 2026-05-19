@@ -39,7 +39,7 @@ def obtener_mensaje_fallback() -> str:
     return config.get("fallback_message", "Disculpa, no entendí tu mensaje. ¿Podrías reformularlo?")
 
 
-async def generar_respuesta(mensaje: str, historial: list[dict], perfil: dict | None = None) -> str:
+async def generar_respuesta(mensaje: str, historial: list[dict], perfil: dict | None = None, idioma: str | None = None) -> str:
     """
     Genera una respuesta usando Claude API.
 
@@ -56,16 +56,40 @@ async def generar_respuesta(mensaje: str, historial: list[dict], perfil: dict | 
 
     system_prompt = cargar_system_prompt()
 
-    if perfil and perfil.get("nombre"):
-        datos = (
-            f"\n\n## Cliente actual (lead conocido)\n"
-            f"Este cliente ya ha contactado antes. Salúdale por su nombre y retoma desde sus intereses previos.\n"
-            f"- Nombre: {perfil['nombre']}\n"
-            f"- Apto de interés: {perfil['apto'] or 'No especificado'}\n"
-            f"- Habitaciones: {perfil['habitaciones'] or 'No especificado'}\n"
-            f"- Intención: {perfil['intencion'] or 'No especificada'}\n"
-            f"- Primera consulta: {perfil['fecha']}\n"
+    if idioma == "en":
+        system_prompt += (
+            "\n\n## Language\n"
+            "This customer communicates in ENGLISH. You MUST respond entirely in English.\n"
+            "Translate all project information, prices, descriptions, and responses to English.\n"
+            "Do not mix Spanish and English under any circumstances."
         )
+    else:
+        system_prompt += (
+            "\n\n## Idioma\n"
+            "Este cliente se comunica en ESPAÑOL. Responde siempre en español."
+        )
+
+    if perfil and perfil.get("nombre"):
+        if idioma == "en":
+            datos = (
+                f"\n\n## Current customer (returning lead)\n"
+                f"This customer has contacted before. Greet them by name and follow up on their previous interests.\n"
+                f"- Name: {perfil['nombre']}\n"
+                f"- Apartment of interest: {perfil['apto'] or 'Not specified'}\n"
+                f"- Bedrooms: {perfil['habitaciones'] or 'Not specified'}\n"
+                f"- Intent: {perfil['intencion'] or 'Not specified'}\n"
+                f"- First contact: {perfil['fecha']}\n"
+            )
+        else:
+            datos = (
+                f"\n\n## Cliente actual (lead conocido)\n"
+                f"Este cliente ya ha contactado antes. Salúdale por su nombre y retoma desde sus intereses previos.\n"
+                f"- Nombre: {perfil['nombre']}\n"
+                f"- Apto de interés: {perfil['apto'] or 'No especificado'}\n"
+                f"- Habitaciones: {perfil['habitaciones'] or 'No especificado'}\n"
+                f"- Intención: {perfil['intencion'] or 'No especificada'}\n"
+                f"- Primera consulta: {perfil['fecha']}\n"
+            )
         system_prompt += datos
 
     mensajes = []

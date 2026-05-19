@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from agent.brain import generar_respuesta
-from agent.memory import inicializar_db, guardar_mensaje, obtener_historial, guardar_lead, lead_existe, obtener_perfil_lead
+from agent.memory import inicializar_db, guardar_mensaje, obtener_historial, guardar_lead, lead_existe, obtener_perfil_lead, guardar_idioma, obtener_idioma
 from agent.tools import (
     extraer_marcadores_plano,
     extraer_marcadores_render,
@@ -30,6 +30,26 @@ logger = logging.getLogger("agentkit")
 
 PORT = int(os.getenv("PORT", 8000))
 BASE_URL = os.getenv("BASE_URL", f"http://localhost:{PORT}")
+
+_EN_WORDS = {
+    "the", "is", "are", "i", "you", "what", "how", "want", "need", "have",
+    "can", "hello", "hi", "thanks", "please", "apartment", "price", "bedroom",
+    "looking", "interested", "information", "good", "morning", "evening",
+    "night", "day", "help", "penthouse", "floor", "available", "send", "show",
+}
+_ES_WORDS = {
+    "el", "la", "los", "las", "es", "son", "yo", "que", "qué", "cómo", "como",
+    "quiero", "necesito", "hola", "gracias", "por", "favor", "apartamento",
+    "precio", "habitación", "habitaciones", "busco", "buenas", "buenos",
+    "días", "tardes", "noches", "información", "me", "con", "del", "para",
+}
+
+
+def _detectar_idioma(texto: str) -> str:
+    words = set(texto.lower().split())
+    en = len(words & _EN_WORDS)
+    es = len(words & _ES_WORDS)
+    return "en" if en > es else "es"
 
 # El proveedor se inicializa en lifespan, no al importar el módulo
 proveedor = None
@@ -122,14 +142,21 @@ async def webhook_handler(request: Request):
             logger.info(f"Mensaje de {msg.telefono}: {msg.texto}")
 
             historial = await obtener_historial(msg.telefono)
+            idioma = await obtener_idioma(msg.telefono)
 
             if len(historial) == 0:
+                if idioma is None:
+                    idioma = _detectar_idioma(msg.texto)
+                    await guardar_idioma(msg.telefono, idioma)
                 url_logo = f"{BASE_URL}/assets/TF-LOGO.jpg"
                 await proveedor.enviar_media(msg.telefono, url_logo)
                 logger.info("Logo enviado al inicio de conversación")
+            elif idioma is None:
+                idioma = _detectar_idioma(msg.texto)
+                await guardar_idioma(msg.telefono, idioma)
 
             perfil = await obtener_perfil_lead(msg.telefono)
-            respuesta_raw = await generar_respuesta(msg.texto, historial, perfil)
+            respuesta_raw = await generar_respuesta(msg.texto, historial, perfil, idioma)
 
             texto_sin_planos, codigos_plano = extraer_marcadores_plano(respuesta_raw)
             texto_sin_renders, claves_render = extraer_marcadores_render(texto_sin_planos)

@@ -49,6 +49,14 @@ class Lead(Base):
     fecha: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class Preferencia(Base):
+    """Preferencias por número de teléfono (idioma, etc.)."""
+    __tablename__ = "preferencias"
+
+    telefono: Mapped[str] = mapped_column(String(50), primary_key=True)
+    idioma: Mapped[str] = mapped_column(String(10), default="es")
+
+
 async def inicializar_db():
     """Crea las tablas si no existen."""
     async with engine.begin() as conn:
@@ -136,6 +144,26 @@ async def guardar_lead(telefono: str, nombre: str, email: str = "", apto: str = 
         )
         session.add(lead)
         await session.commit()
+
+
+async def guardar_idioma(telefono: str, idioma: str):
+    """Guarda o actualiza el idioma preferido de un contacto."""
+    async with async_session() as session:
+        result = await session.execute(select(Preferencia).where(Preferencia.telefono == telefono))
+        pref = result.scalar_one_or_none()
+        if pref:
+            pref.idioma = idioma
+        else:
+            session.add(Preferencia(telefono=telefono, idioma=idioma))
+        await session.commit()
+
+
+async def obtener_idioma(telefono: str) -> str | None:
+    """Retorna el idioma guardado para un contacto, o None si es nuevo."""
+    async with async_session() as session:
+        result = await session.execute(select(Preferencia).where(Preferencia.telefono == telefono))
+        pref = result.scalar_one_or_none()
+        return pref.idioma if pref else None
 
 
 async def limpiar_historial(telefono: str):
