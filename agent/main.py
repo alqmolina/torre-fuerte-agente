@@ -68,6 +68,9 @@ if os.path.exists("knowledge/planos"):
 if os.path.exists("knowledge/renders"):
     app.mount("/renders", StaticFiles(directory="knowledge/renders"), name="renders")
 
+if os.path.exists("knowledge"):
+    app.mount("/assets", StaticFiles(directory="knowledge"), name="assets")
+
 
 @app.get("/")
 async def health_check():
@@ -119,6 +122,12 @@ async def webhook_handler(request: Request):
             logger.info(f"Mensaje de {msg.telefono}: {msg.texto}")
 
             historial = await obtener_historial(msg.telefono)
+
+            if len(historial) == 0:
+                url_logo = f"{BASE_URL}/assets/TF-LOGO.jpg"
+                await proveedor.enviar_media(msg.telefono, url_logo)
+                logger.info("Logo enviado al inicio de conversación")
+
             perfil = await obtener_perfil_lead(msg.telefono)
             respuesta_raw = await generar_respuesta(msg.texto, historial, perfil)
 

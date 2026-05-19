@@ -15,6 +15,7 @@ venv/
 # Knowledge (archivos privados del negocio)
 knowledge/*
 !knowledge/.gitkeep
+!knowledge/TF-LOGO.jpg
 !knowledge/planos/
 knowledge/renders/
 !knowledge/renders/
