@@ -44,27 +44,20 @@ MAPA_PLANOS = {
     "todos": "torre-fuerte-Aptos-todo.pdf",
 }
 
-# URLs de renders — imágenes servidas desde Railway, penthouse desde GitHub Releases
-_BASE_GH = "https://github.com/alqmolina/torre-fuerte-agente/releases/download/renders-v1"
+# URLs de renders — todas servidas directamente desde Railway
 _RENDERS_401 = [
-    "Renders-TF.jpg",
-    "sala.jpg",
-    "sala-comedor.jpg",
-    "cocina.jpg",
-    "bano.jpg",
-    "hab1.jpg",
-    "hab2.jpg",
+    "Renders-TF.jpg", "sala.jpg", "sala-comedor.jpg",
+    "cocina.jpg", "bano.jpg", "hab1.jpg", "hab2.jpg",
 ]
+_RENDERS_PH = [f"PH_{i:02d}.jpg" for i in range(1, 17)]
 
 def _urls_401(base_url: str) -> list[str]:
     return [f"{base_url}/renders/render-401/{f}" for f in _RENDERS_401]
 
-MAPA_RENDERS_URLS = {
-    "penthouse":     [f"{_BASE_GH}/ph1111_PH_{i:02d}.png" for i in range(1, 17)],
-    "penthouse1111": [f"{_BASE_GH}/ph1111_PH_{i:02d}.png" for i in range(1, 17)],
-    "ph1111":        [f"{_BASE_GH}/ph1111_PH_{i:02d}.png" for i in range(1, 17)],
-    "1111":          [f"{_BASE_GH}/ph1111_PH_{i:02d}.png" for i in range(1, 17)],
-}
+def _urls_ph(base_url: str) -> list[str]:
+    return [f"{base_url}/renders/penthouse-1111/{f}" for f in _RENDERS_PH]
+
+MAPA_RENDERS_URLS = {}
 
 # Carpeta local de renders (solo para test_local.py)
 MAPA_RENDERS = {
@@ -112,11 +105,13 @@ def obtener_renders(clave: str) -> list[str]:
 
 
 def obtener_urls_renders(clave: str, base_url: str = "") -> list[str]:
-    """Retorna URLs de renders. Apt 401 se sirve desde Railway; penthouse desde GitHub Releases."""
+    """Retorna URLs de renders servidas directamente desde Railway."""
     clave_norm = clave.lower().replace("apto", "").replace("-", "").replace(" ", "").strip()
     if clave_norm == "401":
         return _urls_401(base_url)
-    return MAPA_RENDERS_URLS.get(clave_norm, [])
+    if clave_norm in ("penthouse", "penthouse1111", "ph1111", "1111"):
+        return _urls_ph(base_url)
+    return []
 
 
 def extraer_marcadores_plano(texto: str) -> tuple[str, list[str]]:
