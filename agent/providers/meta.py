@@ -68,8 +68,35 @@ class ProveedorMeta(ProveedorWhatsApp):
                 logger.error(f"Error Meta API: {r.status_code} — {r.text}")
             return r.status_code == 200
 
+    async def _subir_video(self, url_video: str) -> str | None:
+        """Descarga un MP4 y lo sube a Meta para obtener un media_id."""
+        try:
+            async with httpx.AsyncClient(timeout=120) as client:
+                dl = await client.get(url_video)
+                if dl.status_code != 200:
+                    logger.error(f"Error descargando video: {dl.status_code}")
+                    return None
+
+                nombre = url_video.split("/")[-1]
+                upload_url = f"https://graph.facebook.com/{self.api_version}/{self.phone_number_id}/media"
+                r = await client.post(
+                    upload_url,
+                    headers={"Authorization": f"Bearer {self.access_token}"},
+                    data={"messaging_product": "whatsapp", "type": "video/mp4"},
+                    files={"file": (nombre, dl.content, "video/mp4")},
+                )
+                if r.status_code == 200:
+                    media_id = r.json().get("id")
+                    logger.info(f"Video subido a Meta, media_id: {media_id}")
+                    return media_id
+                logger.error(f"Error subiendo video a Meta: {r.status_code} — {r.text}")
+                return None
+        except Exception as e:
+            logger.error(f"Excepción subiendo video: {e}")
+            return None
+
     async def enviar_media(self, telefono: str, url_media: str, caption: str = "") -> bool:
-        """Envía un documento o imagen via Meta WhatsApp Cloud API."""
+        """Envía un documento, imagen o video via Meta WhatsApp Cloud API."""
         if not self.access_token or not self.phone_number_id:
             logger.warning("META_ACCESS_TOKEN o META_PHONE_NUMBER_ID no configurados")
             return False
@@ -81,19 +108,24 @@ class ProveedorMeta(ProveedorWhatsApp):
         }
 
         ext = url_media.split(".")[-1].lower()
-        if ext == "pdf":
+
+        if ext == "mp4":
+            media_id = await self._subir_video(url_media)
+            if not media_id:
+                logger.error(f"No se pudo obtener media_id para el video: {url_media}")
+                return False
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": telefono,
+                "type": "video",
+                "video": {"id": media_id, "caption": caption},
+            }
+        elif ext == "pdf":
             payload = {
                 "messaging_product": "whatsapp",
                 "to": telefono,
                 "type": "document",
                 "document": {"link": url_media, "caption": caption},
-            }
-        elif ext == "mp4":
-            payload = {
-                "messaging_product": "whatsapp",
-                "to": telefono,
-                "type": "video",
-                "video": {"link": url_media, "caption": caption},
             }
         else:
             payload = {
