@@ -88,6 +88,13 @@ class ProveedorMeta(ProveedorWhatsApp):
                 "type": "document",
                 "document": {"link": url_media, "caption": caption},
             }
+        elif ext == "mp4":
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": telefono,
+                "type": "video",
+                "video": {"link": url_media, "caption": caption},
+            }
         else:
             payload = {
                 "messaging_product": "whatsapp",

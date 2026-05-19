@@ -48,6 +48,7 @@ MAPA_PLANOS = {
 _RENDERS_401 = [
     "Renders-TF.jpg", "sala.jpg", "sala-comedor.jpg",
     "cocina.jpg", "bano.jpg", "hab1.jpg", "hab2.jpg",
+    "video-401.mp4",
 ]
 _RENDERS_PH = [f"PH_{i:02d}.jpg" for i in range(1, 17)]
 
