@@ -47,8 +47,8 @@ MAPA_PLANOS = {
 # URLs públicas de renders en GitHub Releases
 _BASE = "https://github.com/alqmolina/torre-fuerte-agente/releases/download/renders-v1"
 MAPA_RENDERS_URLS = {
-    "401":        [f"{_BASE}/apt401_Torre_Fuerte_0{i}.jpg" for i in range(1, 9)] +
-                  [f"{_BASE}/apt401_Video_apto_D401.mp4"],
+    "401":        [f"{_BASE}/apt401_Renders-TF.pdf",
+                   f"{_BASE}/apt401_Video_apto_D401.mp4"],
     "penthouse":  [f"{_BASE}/ph1111_PH_{i:02d}.png" for i in range(1, 17)],
     "penthouse1111": [f"{_BASE}/ph1111_PH_{i:02d}.png" for i in range(1, 17)],
     "ph1111":     [f"{_BASE}/ph1111_PH_{i:02d}.png" for i in range(1, 17)],
