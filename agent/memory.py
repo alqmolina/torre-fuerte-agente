@@ -146,6 +146,26 @@ async def guardar_lead(telefono: str, nombre: str, email: str = "", apto: str = 
         await session.commit()
 
 
+async def obtener_todos_los_leads() -> list[dict]:
+    """Retorna todos los leads registrados ordenados por fecha descendente."""
+    async with async_session() as session:
+        result = await session.execute(select(Lead).order_by(Lead.fecha.desc()))
+        leads = result.scalars().all()
+        return [
+            {
+                "fecha": lead.fecha.strftime("%Y-%m-%d %H:%M"),
+                "nombre": lead.nombre,
+                "telefono": lead.telefono,
+                "email": lead.email,
+                "apto": lead.apto,
+                "habitaciones": lead.habitaciones,
+                "temperatura": lead.temperatura,
+                "intencion": lead.intencion,
+            }
+            for lead in leads
+        ]
+
+
 async def guardar_idioma(telefono: str, idioma: str):
     """Guarda o actualiza el idioma preferido de un contacto."""
     async with async_session() as session:

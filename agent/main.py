@@ -6,14 +6,14 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
 load_dotenv()
 
 from agent.brain import generar_respuesta
-from agent.memory import inicializar_db, guardar_mensaje, obtener_historial, guardar_lead, lead_existe, obtener_perfil_lead, guardar_idioma, obtener_idioma
+from agent.memory import inicializar_db, guardar_mensaje, obtener_historial, guardar_lead, lead_existe, obtener_perfil_lead, guardar_idioma, obtener_idioma, obtener_todos_los_leads
 from agent.tools import (
     extraer_marcadores_plano,
     extraer_marcadores_render,
@@ -21,6 +21,7 @@ from agent.tools import (
     obtener_plano,
     obtener_urls_renders,
     enviar_email_lead,
+    exportar_leads_excel,
 )
 
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
@@ -118,6 +119,20 @@ async def debug():
     }
 
 
+@app.get("/leads/export")
+async def exportar_leads():
+    """Descarga el Excel con todos los leads. Regenera desde la BD antes de servir."""
+    leads = await obtener_todos_los_leads()
+    if not leads:
+        raise HTTPException(status_code=404, detail="No hay leads registrados aún.")
+    ruta = exportar_leads_excel(leads)
+    return FileResponse(
+        ruta,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename="leads-torre-fuerte.xlsx",
+    )
+
+
 @app.get("/webhook")
 async def webhook_verificacion(request: Request):
     resultado = await proveedor.validar_webhook(request)
@@ -210,6 +225,8 @@ async def webhook_handler(request: Request):
                     lead_data.get("intencion", ""),
                 )
                 logger.info(f"Lead registrado: {lead_data['nombre']} ({msg.telefono})")
+                todos_los_leads = await obtener_todos_los_leads()
+                exportar_leads_excel(todos_los_leads)
 
             logger.info(f"Respuesta enviada a {msg.telefono}")
 

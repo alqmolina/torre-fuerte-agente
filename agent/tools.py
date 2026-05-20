@@ -7,6 +7,9 @@ import yaml
 import logging
 import httpx
 from datetime import datetime
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.utils import get_column_letter
 
 logger = logging.getLogger("agentkit")
 
@@ -237,6 +240,61 @@ def registrar_lead(telefono: str, nombre: str, interes: str, presupuesto: str = 
     }
     logger.info(f"Lead registrado: {lead}")
     return {"registrado": True}
+
+
+LEADS_EXCEL_PATH = "data/leads.xlsx"
+
+_HEADERS = ["Fecha", "Nombre", "Teléfono", "Email", "Apto de interés", "Habitaciones", "Temperatura", "Intención"]
+_HEADER_COLOR = "1a3c5e"
+_ROW_COLORS = ["FFFFFF", "EAF1F8"]
+
+
+def exportar_leads_excel(leads: list[dict]) -> str:
+    """Genera o sobreescribe data/leads.xlsx con todos los leads. Retorna la ruta."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Leads Torre Fuerte"
+
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    header_fill = PatternFill(fill_type="solid", fgColor=_HEADER_COLOR)
+    header_align = Alignment(horizontal="center", vertical="center")
+
+    for col_idx, header in enumerate(_HEADERS, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_align
+
+    ws.row_dimensions[1].height = 20
+
+    for row_idx, lead in enumerate(leads, start=2):
+        icono = ICONOS_TEMPERATURA.get(lead.get("temperatura", "").lower(), "")
+        temp = f"{icono} {lead.get('temperatura', '').upper()}" if lead.get("temperatura") else ""
+        fila = [
+            lead.get("fecha", ""),
+            lead.get("nombre", ""),
+            lead.get("telefono", ""),
+            lead.get("email", ""),
+            lead.get("apto", ""),
+            lead.get("habitaciones", ""),
+            temp,
+            lead.get("intencion", ""),
+        ]
+        fill_color = _ROW_COLORS[(row_idx - 2) % 2]
+        row_fill = PatternFill(fill_type="solid", fgColor=fill_color)
+        for col_idx, value in enumerate(fila, start=1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=value)
+            cell.fill = row_fill
+            cell.alignment = Alignment(vertical="center")
+
+    col_widths = [18, 25, 18, 30, 18, 14, 14, 14]
+    for col_idx, width in enumerate(col_widths, start=1):
+        ws.column_dimensions[get_column_letter(col_idx)].width = width
+
+    os.makedirs("data", exist_ok=True)
+    wb.save(LEADS_EXCEL_PATH)
+    logger.info(f"Excel de leads actualizado: {len(leads)} leads")
+    return LEADS_EXCEL_PATH
 
 
 def registrar_visita(telefono: str, nombre: str, fecha: str, hora: str) -> dict:
