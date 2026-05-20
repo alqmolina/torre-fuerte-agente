@@ -123,8 +123,6 @@ async def debug():
 async def exportar_leads():
     """Descarga el Excel con todos los leads. Regenera desde la BD antes de servir."""
     leads = await obtener_todos_los_leads()
-    if not leads:
-        raise HTTPException(status_code=404, detail="No hay leads registrados aún.")
     ruta = exportar_leads_excel(leads)
     return FileResponse(
         ruta,
