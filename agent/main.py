@@ -175,8 +175,15 @@ async def webhook_handler(request: Request):
             texto_sin_renders, claves_render = extraer_marcadores_render(texto_sin_planos)
             texto_limpio, lead_data = extraer_marcador_lead(texto_sin_renders)
 
+            # Anotar en el historial qué media se envió para que Claude no lo repita
+            texto_a_guardar = texto_limpio
+            if codigos_plano:
+                texto_a_guardar += f"\n[Sistema: plano(s) enviado(s): {', '.join(codigos_plano)}]"
+            if claves_render:
+                texto_a_guardar += f"\n[Sistema: renders enviados: {', '.join(claves_render)}]"
+
             await guardar_mensaje(msg.telefono, "user", msg.texto)
-            await guardar_mensaje(msg.telefono, "assistant", texto_limpio)
+            await guardar_mensaje(msg.telefono, "assistant", texto_a_guardar)
 
             if texto_limpio:
                 await proveedor.enviar_mensaje(msg.telefono, texto_limpio)

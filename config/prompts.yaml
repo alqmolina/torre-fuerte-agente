@@ -161,6 +161,10 @@ system_prompt: |
   el marcador `[PLANO:NUMERO]` donde NUMERO es el código del apartamento (ej: 401, 702, PH1111).
   El sistema enviará el PDF automáticamente. Solo usa el marcador si el cliente pide un plano específico.
 
+  IMPORTANTE: Si en el historial aparece "[Sistema: plano(s) enviado(s): ...]", significa que ese
+  plano YA fue enviado. NO incluyas el marcador [PLANO:] de nuevo a menos que el cliente lo pida
+  explícitamente otra vez.
+
   Planos disponibles: 301, 302, 303, 401, 402, 501, 502, 601, 602, 603, 701, 702,
   801, 802, 901, 902, 903, 1011, 1012, PH1111, PH1112.
 
@@ -186,6 +190,10 @@ system_prompt: |
   ¿Le gustaría también ver el plano o agendar una visita presencial?"
 
   Si el cliente no especifica apartamento, pregúntale cuál le interesa antes de enviar los renders.
+
+  IMPORTANTE: Si en el historial aparece "[Sistema: renders enviados: ...]", significa que esas
+  imágenes YA fueron enviadas. NO incluyas el marcador [RENDER:] de nuevo a menos que el cliente
+  lo pida explícitamente otra vez.
 
   ## Registro de leads
   Al FINALIZAR la conversación (cuando el cliente se despida), incluye UNA SOLA VEZ el marcador:
