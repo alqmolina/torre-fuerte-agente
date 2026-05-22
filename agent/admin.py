@@ -241,8 +241,16 @@ async def admin_chat(telefono: str, _: None = Depends(_auth)):
       }}
     }}
 
-    // Auto-refresh cada 8 segundos para ver mensajes nuevos del lead
-    setTimeout(() => location.reload(), 8000);
+    // Auto-refresh solo si el asesor no está escribiendo
+    const txt = document.getElementById('txt');
+    function intentarRefresh() {
+      if (document.activeElement !== txt && !txt.value.trim()) {
+        location.reload();
+      } else {
+        setTimeout(intentarRefresh, 4000);
+      }
+    }
+    setTimeout(intentarRefresh, 10000);
   </script>
 </body>
 </html>"""
