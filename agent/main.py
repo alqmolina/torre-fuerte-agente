@@ -13,14 +13,23 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from agent.brain import generar_respuesta
-from agent.memory import inicializar_db, guardar_mensaje, obtener_historial, guardar_lead, lead_existe, obtener_perfil_lead, guardar_idioma, obtener_idioma, obtener_todos_los_leads
+from agent.memory import (
+    inicializar_db, guardar_mensaje, obtener_historial,
+    guardar_lead, lead_existe, obtener_perfil_lead,
+    guardar_idioma, obtener_idioma, obtener_todos_los_leads,
+    activar_handoff, desactivar_handoff, esta_en_handoff,
+    debe_enviar_aviso_handoff, registrar_aviso_handoff,
+    obtener_leads_pendientes_handoff,
+)
 from agent.tools import (
     extraer_marcadores_plano,
     extraer_marcadores_render,
     extraer_marcador_lead,
+    extraer_marcador_handoff,
     obtener_plano,
     obtener_urls_renders,
     enviar_email_lead,
+    enviar_email_handoff,
     exportar_leads_excel,
 )
 
@@ -31,6 +40,7 @@ logger = logging.getLogger("agentkit")
 
 PORT = int(os.getenv("PORT", 8000))
 BASE_URL = os.getenv("BASE_URL", f"http://localhost:{PORT}")
+ASESOR_WHATSAPP = os.getenv("ASESOR_WHATSAPP", "")
 
 _EN_WORDS = {
     "the", "is", "are", "i", "you", "what", "how", "want", "need", "have",
@@ -56,11 +66,73 @@ def _detectar_idioma(texto: str) -> str:
 proveedor = None
 
 
+async def _notificar_handoff(telefono: str, nombre: str, temperatura: str, razon: str, idioma: str, apto: str = "", habitaciones: str = "", email_lead: str = "") -> None:
+    """Envía notificación de handoff al asesor por email y WhatsApp (si está configurado)."""
+    enviar_email_handoff(telefono, nombre, temperatura, razon, apto, habitaciones, email_lead)
+
+    if ASESOR_WHATSAPP and proveedor:
+        from agent.tools import ICONOS_TEMPERATURA
+        icono = ICONOS_TEMPERATURA.get(temperatura.lower(), "🔔")
+        msg_asesor = (
+            f"🔔 *TRANSFERENCIA A ASESOR*\n\n"
+            f"📱 Tel: {telefono}\n"
+            f"👤 Nombre: {nombre}\n"
+            f"🏠 Apto: {apto or 'No especificado'}\n"
+            f"🌡️ Temperatura: {icono} {temperatura.upper()}\n"
+            f"📋 Razón: {razon}\n\n"
+            f"Responde desde Meta Business Suite:\nbusiness.facebook.com"
+        )
+        try:
+            await proveedor.enviar_mensaje(ASESOR_WHATSAPP, msg_asesor)
+        except Exception as e:
+            logger.warning(f"No se pudo enviar WhatsApp al asesor: {e}")
+
+
+async def _tarea_handoff_inactivos() -> None:
+    """Tarea background: revisa cada 2 minutos si hay leads tibio/caliente inactivos 20+ min."""
+    await asyncio.sleep(90)  # esperar que el servidor arranque completamente
+    while True:
+        try:
+            pendientes = await obtener_leads_pendientes_handoff(minutos=20)
+            for lead in pendientes:
+                telefono = lead["telefono"]
+                nombre = lead.get("nombre", "")
+                temperatura = lead.get("temperatura", "")
+                idioma = await obtener_idioma(telefono) or "es"
+
+                await activar_handoff(telefono, "inactividad 20 minutos")
+
+                if idioma == "en":
+                    msg_lead = (
+                        f"Hi {nombre}! 👋 A Torre Fuerte advisor will reach out to you shortly "
+                        f"to continue with your inquiry. 🏠✨"
+                    )
+                else:
+                    msg_lead = (
+                        f"¡Hola {nombre}! 👋 Un asesor de Torre Fuerte se pondrá en contacto "
+                        f"contigo muy pronto para continuar con tu consulta. 🏠✨"
+                    )
+
+                if proveedor:
+                    await proveedor.enviar_mensaje(telefono, msg_lead)
+                    await registrar_aviso_handoff(telefono)
+
+                await _notificar_handoff(
+                    telefono, nombre, temperatura, "inactividad 20 minutos", idioma,
+                    lead.get("apto", ""), lead.get("habitaciones", ""), lead.get("email", ""),
+                )
+                logger.info(f"Handoff automático por inactividad: {nombre} ({telefono})")
+
+        except Exception as e:
+            logger.error(f"Error en tarea handoff inactivos: {e}")
+
+        await asyncio.sleep(120)  # revisar cada 2 minutos
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global proveedor
 
-    # Diagnóstico: mostrar variables de entorno disponibles (solo nombres, no valores secretos)
     env_keys = list(os.environ.keys())
     logger.info(f"Variables de entorno disponibles: {env_keys}")
     logger.info(f"WHATSAPP_PROVIDER = '{os.getenv('WHATSAPP_PROVIDER', 'NO DEFINIDO')}'")
@@ -69,6 +141,8 @@ async def lifespan(app: FastAPI):
 
     from agent.providers import obtener_proveedor
     proveedor = obtener_proveedor()
+
+    asyncio.create_task(_tarea_handoff_inactivos())
 
     logger.info("Base de datos inicializada")
     logger.info(f"Servidor corriendo en puerto {PORT}")
@@ -119,6 +193,14 @@ async def debug():
     }
 
 
+@app.delete("/handoff/{telefono}")
+async def reset_handoff(telefono: str):
+    """Desactiva el handoff de un lead — el asesor ya terminó de atenderlo."""
+    await desactivar_handoff(telefono)
+    logger.info(f"Handoff desactivado para {telefono}")
+    return {"status": "ok", "telefono": telefono, "handoff": "desactivado"}
+
+
 @app.get("/leads/export")
 async def exportar_leads():
     """Descarga el Excel con todos los leads. Regenera desde la BD antes de servir."""
@@ -154,6 +236,26 @@ async def webhook_handler(request: Request):
 
             logger.info(f"Mensaje de {msg.telefono}: {msg.texto}")
 
+            # Si hay handoff activo, el bot cede el turno al asesor humano
+            if await esta_en_handoff(msg.telefono):
+                if await debe_enviar_aviso_handoff(msg.telefono):
+                    idioma_h = await obtener_idioma(msg.telefono) or "es"
+                    perfil_h = await obtener_perfil_lead(msg.telefono)
+                    nombre_h = perfil_h.get("nombre", "") if perfil_h else ""
+                    if idioma_h == "en":
+                        aviso = (
+                            f"Hi{' ' + nombre_h if nombre_h else ''}! 😊 "
+                            f"You already have an advisor assigned who will contact you shortly."
+                        )
+                    else:
+                        aviso = (
+                            f"¡Hola{' ' + nombre_h if nombre_h else ''}! 😊 "
+                            f"Ya tienes un asesor asignado que te contactará muy pronto."
+                        )
+                    await proveedor.enviar_mensaje(msg.telefono, aviso)
+                    await registrar_aviso_handoff(msg.telefono)
+                continue
+
             historial = await obtener_historial(msg.telefono)
             idioma = await obtener_idioma(msg.telefono)
 
@@ -173,7 +275,8 @@ async def webhook_handler(request: Request):
 
             texto_sin_planos, codigos_plano = extraer_marcadores_plano(respuesta_raw)
             texto_sin_renders, claves_render = extraer_marcadores_render(texto_sin_planos)
-            texto_limpio, lead_data = extraer_marcador_lead(texto_sin_renders)
+            texto_sin_lead, lead_data = extraer_marcador_lead(texto_sin_renders)
+            texto_limpio, razon_handoff = extraer_marcador_handoff(texto_sin_lead)
 
             # Anotar en el historial qué media se envió para que Claude no lo repita
             texto_a_guardar = texto_limpio
@@ -232,6 +335,23 @@ async def webhook_handler(request: Request):
                 logger.info(f"Lead registrado: {lead_data['nombre']} ({msg.telefono})")
                 todos_los_leads = await obtener_todos_los_leads()
                 exportar_leads_excel(todos_los_leads)
+
+            # Handoff: Claude emitió [HANDOFF] → transferir a asesor
+            if razon_handoff and not await esta_en_handoff(msg.telefono):
+                perfil_h = await obtener_perfil_lead(msg.telefono)
+                nombre_h = (perfil_h or {}).get("nombre", "")
+                temperatura_h = (perfil_h or lead_data or {}).get("temperatura", "tibio")
+                apto_h = (perfil_h or lead_data or {}).get("apto", "")
+                hab_h = (perfil_h or lead_data or {}).get("habitaciones", "")
+                email_h = (perfil_h or lead_data or {}).get("email", "")
+
+                await activar_handoff(msg.telefono, razon_handoff)
+                await registrar_aviso_handoff(msg.telefono)
+                await _notificar_handoff(
+                    msg.telefono, nombre_h, temperatura_h, razon_handoff,
+                    idioma, apto_h, hab_h, email_h,
+                )
+                logger.info(f"Handoff activado para {msg.telefono} — razón: {razon_handoff}")
 
             logger.info(f"Respuesta enviada a {msg.telefono}")
 

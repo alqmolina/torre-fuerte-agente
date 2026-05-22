@@ -2,10 +2,10 @@
 # Generado por AgentKit
 
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import String, Text, DateTime, select, Integer, UniqueConstraint
+from sqlalchemy import String, Text, DateTime, select, Integer, Boolean, UniqueConstraint
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -55,6 +55,17 @@ class Preferencia(Base):
 
     telefono: Mapped[str] = mapped_column(String(50), primary_key=True)
     idioma: Mapped[str] = mapped_column(String(10), default="es")
+
+
+class Handoff(Base):
+    """Transferencias activas a asesor humano."""
+    __tablename__ = "handoffs"
+
+    telefono: Mapped[str] = mapped_column(String(50), primary_key=True)
+    activo: Mapped[bool] = mapped_column(Boolean, default=True)
+    razon: Mapped[str] = mapped_column(String(200), default="")
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    ultimo_aviso: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
 
 
 async def inicializar_db():
@@ -184,6 +195,99 @@ async def obtener_idioma(telefono: str) -> str | None:
         result = await session.execute(select(Preferencia).where(Preferencia.telefono == telefono))
         pref = result.scalar_one_or_none()
         return pref.idioma if pref else None
+
+
+async def activar_handoff(telefono: str, razon: str = "") -> None:
+    """Activa o actualiza una transferencia a asesor humano."""
+    async with async_session() as session:
+        result = await session.execute(select(Handoff).where(Handoff.telefono == telefono))
+        h = result.scalar_one_or_none()
+        if h:
+            h.activo = True
+            h.razon = razon
+            h.timestamp = datetime.utcnow()
+        else:
+            session.add(Handoff(telefono=telefono, activo=True, razon=razon, timestamp=datetime.utcnow()))
+        await session.commit()
+
+
+async def desactivar_handoff(telefono: str) -> None:
+    """Desactiva la transferencia a asesor (el asesor terminó de atender)."""
+    async with async_session() as session:
+        result = await session.execute(select(Handoff).where(Handoff.telefono == telefono))
+        h = result.scalar_one_or_none()
+        if h:
+            h.activo = False
+            await session.commit()
+
+
+async def esta_en_handoff(telefono: str) -> bool:
+    """Verifica si hay una transferencia activa para este teléfono."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(Handoff).where(Handoff.telefono == telefono, Handoff.activo == True)
+        )
+        return result.scalar_one_or_none() is not None
+
+
+async def debe_enviar_aviso_handoff(telefono: str, intervalo_horas: int = 2) -> bool:
+    """True si no se ha enviado aviso de handoff en las últimas `intervalo_horas` horas."""
+    async with async_session() as session:
+        result = await session.execute(select(Handoff).where(Handoff.telefono == telefono))
+        h = result.scalar_one_or_none()
+        if not h:
+            return False
+        if h.ultimo_aviso is None:
+            return True
+        return (datetime.utcnow() - h.ultimo_aviso).total_seconds() > intervalo_horas * 3600
+
+
+async def registrar_aviso_handoff(telefono: str) -> None:
+    """Actualiza la marca de tiempo del último aviso enviado al lead en handoff."""
+    async with async_session() as session:
+        result = await session.execute(select(Handoff).where(Handoff.telefono == telefono))
+        h = result.scalar_one_or_none()
+        if h:
+            h.ultimo_aviso = datetime.utcnow()
+            await session.commit()
+
+
+async def obtener_leads_pendientes_handoff(minutos: int = 20) -> list[dict]:
+    """Leads tibio/caliente sin handoff activo cuyo último mensaje fue hace más de `minutos` minutos."""
+    desde = datetime.utcnow() - timedelta(minutes=minutos)
+    async with async_session() as session:
+        result = await session.execute(
+            select(Lead).where(Lead.temperatura.in_(["tibio", "caliente"]))
+        )
+        leads = result.scalars().all()
+
+        pendientes = []
+        for lead in leads:
+            h_result = await session.execute(
+                select(Handoff).where(Handoff.telefono == lead.telefono, Handoff.activo == True)
+            )
+            if h_result.scalar_one_or_none():
+                continue
+
+            last_result = await session.execute(
+                select(Mensaje.timestamp)
+                .where(Mensaje.telefono == lead.telefono)
+                .order_by(Mensaje.timestamp.desc())
+                .limit(1)
+            )
+            last_ts = last_result.scalar_one_or_none()
+            if last_ts and last_ts < desde:
+                pendientes.append({
+                    "telefono": lead.telefono,
+                    "nombre": lead.nombre,
+                    "email": lead.email,
+                    "apto": lead.apto,
+                    "habitaciones": lead.habitaciones,
+                    "temperatura": lead.temperatura,
+                    "intencion": lead.intencion,
+                })
+
+        return pendientes
 
 
 async def limpiar_historial(telefono: str):

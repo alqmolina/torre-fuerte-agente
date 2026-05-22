@@ -196,6 +196,68 @@ def extraer_marcadores_render(texto: str) -> tuple[str, list[str]]:
     return texto_limpio, claves
 
 
+def extraer_marcador_handoff(texto: str) -> tuple[str, str | None]:
+    """Extrae [HANDOFF] o [HANDOFF:razon] del texto. Retorna (texto_limpio, razon o None)."""
+    patron = re.compile(r'\[HANDOFF(?::([^\]]*))?\]', re.IGNORECASE)
+    m = patron.search(texto)
+    if not m:
+        return texto, None
+    razon = (m.group(1) or "conversación completada").strip()
+    texto_limpio = patron.sub("", texto).strip()
+    return texto_limpio, razon
+
+
+def enviar_email_handoff(
+    telefono: str,
+    nombre: str,
+    temperatura: str,
+    razon: str,
+    apto: str = "",
+    habitaciones: str = "",
+    email: str = "",
+) -> bool:
+    """Notifica al asesor por email que debe tomar esta conversación en Meta Business Suite."""
+    if not all([RESEND_API_KEY, EMAIL_LEADS]):
+        logger.warning("RESEND_API_KEY o EMAIL_LEADS no configurados — no se envió email handoff")
+        return False
+    try:
+        icono = ICONOS_TEMPERATURA.get(temperatura.lower(), "🔔")
+        temp_texto = f"{icono} {temperatura.upper()}" if temperatura else "No determinada"
+        cuerpo = (
+            f"🔔 TRANSFERENCIA A ASESOR — Torre Fuerte Apartamentos\n\n"
+            f"Un lead requiere atención humana:\n\n"
+            f"📱 Teléfono:      {telefono}\n"
+            f"👤 Nombre:        {nombre}\n"
+            f"📧 Email:         {email or 'No proporcionado'}\n"
+            f"🏠 Apto interés:  {apto or 'No especificado'}\n"
+            f"🛏️  Habitaciones:  {habitaciones or 'No especificado'}\n"
+            f"🌡️  Temperatura:   {temp_texto}\n"
+            f"📋 Razón:         {razon}\n"
+            f"🕐 Hora:          {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n"
+            f"Responde desde Meta Business Suite:\n"
+            f"https://business.facebook.com\n"
+        )
+        r = httpx.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {RESEND_API_KEY}"},
+            json={
+                "from": "Torre Fuerte <onboarding@resend.dev>",
+                "to": [EMAIL_LEADS],
+                "subject": f"🔔 TRANSFERENCIA [{temp_texto}] {nombre} — Torre Fuerte",
+                "text": cuerpo,
+            },
+            timeout=15,
+        )
+        if r.status_code == 200:
+            logger.info(f"Email handoff enviado: {nombre} ({telefono})")
+            return True
+        logger.error(f"Error Resend handoff: {r.status_code} — {r.text}")
+        return False
+    except Exception as e:
+        logger.error(f"Error enviando email handoff: {e}")
+        return False
+
+
 def cargar_info_negocio() -> dict:
     """Carga la información del negocio desde business.yaml."""
     try:

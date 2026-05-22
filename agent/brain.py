@@ -63,10 +63,28 @@ async def generar_respuesta(mensaje: str, historial: list[dict], perfil: dict | 
             "Translate all project information, prices, descriptions, and responses to English.\n"
             "Do not mix Spanish and English under any circumstances."
         )
+        system_prompt += (
+            "\n\n## Human handoff\n"
+            "Add `[HANDOFF:requested_by_user]` at the END of your response (after all text) when:\n"
+            "- The user explicitly asks to speak with an advisor, sales agent, or human.\n"
+            "Add `[HANDOFF:conversation_completed]` at the END of your response when:\n"
+            "- The lead is fully qualified (you have their name, interest, and intent) AND\n"
+            "  they have expressed concrete interest in visiting, getting a formal quote, or buying.\n"
+            "Only emit [HANDOFF] once per conversation. Never emit it in the middle of a message."
+        )
     else:
         system_prompt += (
             "\n\n## Idioma\n"
             "Este cliente se comunica en ESPAÑOL. Responde siempre en español."
+        )
+        system_prompt += (
+            "\n\n## Transferencia a asesor humano\n"
+            "Agrega `[HANDOFF:solicitado_por_usuario]` AL FINAL de tu respuesta (después de todo el texto) cuando:\n"
+            "- El usuario pida explícitamente hablar con un asesor, vendedor o persona humana.\n"
+            "Agrega `[HANDOFF:conversacion_completada]` AL FINAL de tu respuesta cuando:\n"
+            "- El lead esté completamente calificado (tienes su nombre, interés y intención) Y\n"
+            "  haya expresado interés concreto en visitar, cotizar formalmente o comprar.\n"
+            "Solo emite [HANDOFF] una vez por conversación. Nunca en medio del texto."
         )
 
     if perfil and perfil.get("nombre"):
