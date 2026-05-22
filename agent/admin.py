@@ -243,13 +243,13 @@ async def admin_chat(telefono: str, _: None = Depends(_auth)):
 
     // Auto-refresh solo si el asesor no está escribiendo
     const txt = document.getElementById('txt');
-    function intentarRefresh() {
-      if (document.activeElement !== txt && !txt.value.trim()) {
+    function intentarRefresh() {{
+      if (document.activeElement !== txt && !txt.value.trim()) {{
         location.reload();
-      } else {
+      }} else {{
         setTimeout(intentarRefresh, 4000);
-      }
-    }
+      }}
+    }}
     setTimeout(intentarRefresh, 10000);
   </script>
 </body>
