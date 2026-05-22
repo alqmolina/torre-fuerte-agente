@@ -21,6 +21,7 @@ from agent.memory import (
     debe_enviar_aviso_handoff, registrar_aviso_handoff,
     obtener_leads_pendientes_handoff,
 )
+import agent.admin as admin_module
 from agent.tools import (
     extraer_marcadores_plano,
     extraer_marcadores_render,
@@ -142,6 +143,8 @@ async def lifespan(app: FastAPI):
     from agent.providers import obtener_proveedor
     proveedor = obtener_proveedor()
 
+    admin_module.proveedor = proveedor
+
     asyncio.create_task(_tarea_handoff_inactivos())
 
     logger.info("Base de datos inicializada")
@@ -156,6 +159,8 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+app.include_router(admin_module.router)
 
 if os.path.exists("knowledge/planos"):
     app.mount("/planos", StaticFiles(directory="knowledge/planos"), name="planos")

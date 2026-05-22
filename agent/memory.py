@@ -262,6 +262,42 @@ async def registrar_aviso_handoff(telefono: str) -> None:
             await session.commit()
 
 
+async def obtener_handoffs_activos() -> list[dict]:
+    """Retorna todos los handoffs activos con datos del lead y último mensaje."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(Handoff).where(Handoff.activo == True).order_by(Handoff.timestamp.desc())
+        )
+        handoffs = result.scalars().all()
+
+        resultado = []
+        for h in handoffs:
+            lead_result = await session.execute(select(Lead).where(Lead.telefono == h.telefono))
+            lead = lead_result.scalar_one_or_none()
+
+            last_msg_result = await session.execute(
+                select(Mensaje)
+                .where(Mensaje.telefono == h.telefono)
+                .order_by(Mensaje.timestamp.desc())
+                .limit(1)
+            )
+            last_msg = last_msg_result.scalar_one_or_none()
+
+            resultado.append({
+                "telefono": h.telefono,
+                "razon": h.razon,
+                "timestamp": h.timestamp.strftime("%Y-%m-%d %H:%M"),
+                "nombre": lead.nombre if lead else "Desconocido",
+                "temperatura": lead.temperatura if lead else "",
+                "apto": lead.apto if lead else "",
+                "ultimo_mensaje": last_msg.content[:80] if last_msg else "",
+                "ultimo_mensaje_role": last_msg.role if last_msg else "",
+                "ultimo_mensaje_tiempo": last_msg.timestamp.strftime("%H:%M") if last_msg else "",
+            })
+
+        return resultado
+
+
 async def obtener_leads_pendientes_handoff(minutos: int = 20) -> list[dict]:
     """Leads tibio/caliente sin handoff activo cuyo último mensaje fue hace más de `minutos` minutos."""
     desde = datetime.utcnow() - timedelta(minutes=minutos)
