@@ -223,19 +223,57 @@ def enviar_email_handoff(
     try:
         icono = ICONOS_TEMPERATURA.get(temperatura.lower(), "🔔")
         temp_texto = f"{icono} {temperatura.upper()}" if temperatura else "No determinada"
-        cuerpo = (
-            f"🔔 TRANSFERENCIA A ASESOR — Torre Fuerte Apartamentos\n\n"
-            f"Un lead requiere atención humana:\n\n"
-            f"📱 Teléfono:      {telefono}\n"
-            f"👤 Nombre:        {nombre}\n"
-            f"📧 Email:         {email or 'No proporcionado'}\n"
-            f"🏠 Apto interés:  {apto or 'No especificado'}\n"
-            f"🛏️  Habitaciones:  {habitaciones or 'No especificado'}\n"
-            f"🌡️  Temperatura:   {temp_texto}\n"
-            f"📋 Razón:         {razon}\n"
-            f"🕐 Hora:          {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n"
-            f"Responde desde Meta Business Suite:\n"
-            f"https://business.facebook.com\n"
+        tel_limpio = telefono.lstrip("+")
+        cuerpo_html = f"""
+<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+  <div style="background:#1a3c5e;padding:20px;border-radius:8px 8px 0 0">
+    <h2 style="color:#fff;margin:0">🔔 Transferencia a Asesor</h2>
+    <p style="color:#aac8e4;margin:4px 0 0">Torre Fuerte Apartamentos</p>
+  </div>
+  <div style="background:#f5f8fb;padding:24px;border-radius:0 0 8px 8px;border:1px solid #dce8f3">
+    <table style="width:100%;border-collapse:collapse">
+      <tr><td style="padding:8px 0;color:#666;width:140px">📱 Teléfono</td>
+          <td style="padding:8px 0;font-weight:bold;font-size:18px">+{tel_limpio}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">👤 Nombre</td>
+          <td style="padding:8px 0">{nombre}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">📧 Email</td>
+          <td style="padding:8px 0">{email or 'No proporcionado'}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">🏠 Apto interés</td>
+          <td style="padding:8px 0">{apto or 'No especificado'}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">🛏️ Habitaciones</td>
+          <td style="padding:8px 0">{habitaciones or 'No especificado'}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">🌡️ Temperatura</td>
+          <td style="padding:8px 0"><strong>{temp_texto}</strong></td></tr>
+      <tr><td style="padding:8px 0;color:#666">📋 Razón</td>
+          <td style="padding:8px 0">{razon}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">🕐 Hora</td>
+          <td style="padding:8px 0">{datetime.now().strftime('%Y-%m-%d %H:%M')}</td></tr>
+    </table>
+    <div style="margin-top:24px;text-align:center">
+      <a href="https://business.facebook.com/latest/inbox/all"
+         style="display:inline-block;background:#1a3c5e;color:#fff;padding:12px 28px;
+                border-radius:6px;text-decoration:none;font-weight:bold;margin:0 8px">
+        Abrir Meta Business Suite
+      </a>
+    </div>
+    <p style="margin-top:16px;color:#888;font-size:13px;text-align:center">
+      En Meta Business Suite, busca el número <strong>+{tel_limpio}</strong> en la bandeja de entrada.
+    </p>
+  </div>
+</div>
+"""
+        cuerpo_texto = (
+            f"TRANSFERENCIA A ASESOR — Torre Fuerte\n\n"
+            f"Teléfono:     +{tel_limpio}\n"
+            f"Nombre:       {nombre}\n"
+            f"Email:        {email or 'No proporcionado'}\n"
+            f"Apto interés: {apto or 'No especificado'}\n"
+            f"Habitaciones: {habitaciones or 'No especificado'}\n"
+            f"Temperatura:  {temp_texto}\n"
+            f"Razón:        {razon}\n"
+            f"Hora:         {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n"
+            f"Abre Meta Business Suite y busca +{tel_limpio}:\n"
+            f"https://business.facebook.com/latest/inbox/all\n"
         )
         r = httpx.post(
             "https://api.resend.com/emails",
@@ -243,8 +281,9 @@ def enviar_email_handoff(
             json={
                 "from": "Torre Fuerte <onboarding@resend.dev>",
                 "to": [EMAIL_LEADS],
-                "subject": f"🔔 TRANSFERENCIA [{temp_texto}] {nombre} — Torre Fuerte",
-                "text": cuerpo,
+                "subject": f"🔔 [{temp_texto}] {nombre} — +{tel_limpio}",
+                "html": cuerpo_html,
+                "text": cuerpo_texto,
             },
             timeout=15,
         )
