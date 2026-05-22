@@ -197,8 +197,14 @@ async def obtener_idioma(telefono: str) -> str | None:
         return pref.idioma if pref else None
 
 
+def _norm_tel(telefono: str) -> str:
+    """Normaliza el teléfono eliminando el prefijo + para consistencia con Meta."""
+    return telefono.lstrip("+")
+
+
 async def activar_handoff(telefono: str, razon: str = "") -> None:
     """Activa o actualiza una transferencia a asesor humano."""
+    telefono = _norm_tel(telefono)
     async with async_session() as session:
         result = await session.execute(select(Handoff).where(Handoff.telefono == telefono))
         h = result.scalar_one_or_none()
@@ -213,6 +219,7 @@ async def activar_handoff(telefono: str, razon: str = "") -> None:
 
 async def desactivar_handoff(telefono: str) -> None:
     """Desactiva la transferencia a asesor (el asesor terminó de atender)."""
+    telefono = _norm_tel(telefono)
     async with async_session() as session:
         result = await session.execute(select(Handoff).where(Handoff.telefono == telefono))
         h = result.scalar_one_or_none()
@@ -223,6 +230,7 @@ async def desactivar_handoff(telefono: str) -> None:
 
 async def esta_en_handoff(telefono: str) -> bool:
     """Verifica si hay una transferencia activa para este teléfono."""
+    telefono = _norm_tel(telefono)
     async with async_session() as session:
         result = await session.execute(
             select(Handoff).where(Handoff.telefono == telefono, Handoff.activo == True)
@@ -232,6 +240,7 @@ async def esta_en_handoff(telefono: str) -> bool:
 
 async def debe_enviar_aviso_handoff(telefono: str, intervalo_horas: int = 2) -> bool:
     """True si no se ha enviado aviso de handoff en las últimas `intervalo_horas` horas."""
+    telefono = _norm_tel(telefono)
     async with async_session() as session:
         result = await session.execute(select(Handoff).where(Handoff.telefono == telefono))
         h = result.scalar_one_or_none()
@@ -244,6 +253,7 @@ async def debe_enviar_aviso_handoff(telefono: str, intervalo_horas: int = 2) -> 
 
 async def registrar_aviso_handoff(telefono: str) -> None:
     """Actualiza la marca de tiempo del último aviso enviado al lead en handoff."""
+    telefono = _norm_tel(telefono)
     async with async_session() as session:
         result = await session.execute(select(Handoff).where(Handoff.telefono == telefono))
         h = result.scalar_one_or_none()
