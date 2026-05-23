@@ -244,6 +244,7 @@ async def webhook_handler(request: Request):
 
             # Si hay handoff activo, el bot cede el turno al asesor humano
             if await esta_en_handoff(msg.telefono):
+                await guardar_mensaje(msg.telefono, "user", msg.texto)
                 if await debe_enviar_aviso_handoff(msg.telefono):
                     idioma_h = await obtener_idioma(msg.telefono) or "es"
                     perfil_h = await obtener_perfil_lead(msg.telefono)
