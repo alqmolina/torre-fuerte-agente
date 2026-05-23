@@ -18,6 +18,7 @@ from agent.memory import (
     obtener_perfil_lead,
     guardar_mensaje,
     desactivar_handoff,
+    limpiar_historial,
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -369,6 +370,12 @@ async def admin_chat(telefono: str, request: Request):
         Cerrar handoff
       </button>
     </form>
+    <form method="post" action="/admin/delete/{tel_esc}" style="margin:0">
+      <button type="submit" class="close-btn" style="background:rgba(231,76,60,0.2);border-color:rgba(231,76,60,0.5)"
+              onclick="return confirm('¿Eliminar todo el historial de esta conversación? Esta acción no se puede deshacer.')">
+        🗑️
+      </button>
+    </form>
   </div>
   <div class="messages" id="msgs">
     {mensajes_html}
@@ -488,5 +495,14 @@ async def admin_send_media(telefono: str, request: Request, archivo: UploadFile 
 async def admin_close(telefono: str, request: Request):
     if not _autenticado(request):
         return RedirectResponse("/admin/login", status_code=302)
+    await desactivar_handoff(telefono)
+    return RedirectResponse("/admin", status_code=303)
+
+
+@router.post("/delete/{telefono}")
+async def admin_delete(telefono: str, request: Request):
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
+    await limpiar_historial(telefono)
     await desactivar_handoff(telefono)
     return RedirectResponse("/admin", status_code=303)
