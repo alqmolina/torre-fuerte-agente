@@ -18,9 +18,10 @@ from agent.memory import (
 router = APIRouter(prefix="/admin", tags=["admin"])
 proveedor = None  # inyectado desde main.py en lifespan
 
+_fallback_password = os.getenv("META_VERIFY_TOKEN", "torrefuerte2024")
 ADMIN_USER = os.getenv("ADMIN_USER", "admin")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "torrefuerte2024")
-_SECRET = os.getenv("ADMIN_PASSWORD", "torrefuerte2024")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", _fallback_password)
+_SECRET = ADMIN_PASSWORD
 
 _ICONOS = {"caliente": "🔥", "tibio": "🌡️", "frío": "❄️", "frio": "❄️"}
 
