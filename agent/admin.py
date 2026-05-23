@@ -28,6 +28,8 @@ from agent.memory import (
     actualizar_broadcast,
     registrar_broadcast_log,
     obtener_historial_broadcasts,
+    guardar_nota,
+    obtener_notas,
     Handoff,
     async_session,
 )
@@ -321,6 +323,8 @@ async def admin_chat(telefono: str, request: Request):
             if not nombre_raw and _h2.nombre:
                 nombre_raw = _h2.nombre
 
+    notas = await obtener_notas(telefono)
+
     nombre = _esc(nombre_raw) if nombre_raw else "Desconocido"
     apto = _esc(apto_raw) if apto_raw else ""
     intencion = _esc(intencion_raw.capitalize()) if intencion_raw else ""
@@ -426,6 +430,21 @@ async def admin_chat(telefono: str, request: Request):
     <div style="font-size:11px;font-weight:700;color:#b7860b;margin-bottom:4px;letter-spacing:0.5px">📋 RESUMEN DE LA CONVERSACIÓN</div>
     <div style="font-size:13px;color:#555;line-height:1.5">{resumen_html}</div>
   </div>''' if resumen_html else ''}
+  <details style="background:#f5f0ff;border-bottom:1px solid #ddd0f8;flex-shrink:0" {'open' if notas else ''}>
+    <summary style="padding:10px 16px;cursor:pointer;font-size:11px;font-weight:700;color:#7c4dbd;letter-spacing:0.5px;user-select:none;list-style:none;display:flex;align-items:center;gap:6px">
+      📝 NOTAS INTERNAS <span style="background:#7c4dbd;color:white;border-radius:10px;padding:1px 7px;font-size:10px">{len(notas)}</span>
+    </summary>
+    <div style="padding:0 16px 12px">
+      {''.join(f"""<div style="padding:7px 0;border-bottom:1px solid #ede0ff;font-size:13px;color:#333;line-height:1.4">
+        <span style="font-size:10px;color:#aaa;margin-right:8px">{_esc(n['creado_at'])}</span>{_esc(n['texto'])}
+      </div>""" for n in notas) if notas else '<p style="font-size:12px;color:#bbb;padding:6px 0">Sin notas aún</p>'}
+      <form method="post" action="/admin/nota/{tel_esc}" style="margin-top:10px;display:flex;gap:6px">
+        <input type="text" name="texto" placeholder="Agregar nota interna..." required maxlength="500"
+               style="flex:1;border:1px solid #c5b4e8;border-radius:6px;padding:7px 10px;font-size:13px;outline:none;font-family:inherit">
+        <button type="submit" style="background:#7c4dbd;color:white;border:none;border-radius:6px;padding:7px 14px;font-size:13px;cursor:pointer;white-space:nowrap">Guardar</button>
+      </form>
+    </div>
+  </details>
   <div class="messages" id="msgs">
     {mensajes_html}
   </div>
@@ -1010,6 +1029,15 @@ async def broadcast_historial(request: Request):
   </script>
 </body>
 </html>"""
+
+
+@router.post("/nota/{telefono}")
+async def admin_nota(telefono: str, request: Request, texto: str = Form(...)):
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
+    if texto.strip():
+        await guardar_nota(telefono, texto.strip())
+    return RedirectResponse(f"/admin/chat/{telefono}", status_code=303)
 
 
 @router.post("/close/{telefono}")

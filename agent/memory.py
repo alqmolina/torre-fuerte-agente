@@ -105,6 +105,17 @@ class BroadcastLog(Base):
     enviado_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class NotaLead(Base):
+    """Notas internas del asesor sobre un lead."""
+    __tablename__ = "notas_lead"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    telefono: Mapped[str] = mapped_column(String(50), index=True)
+    texto: Mapped[str] = mapped_column(Text)
+    asesor: Mapped[str] = mapped_column(String(100), default="")
+    creado_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class Preferencia(Base):
     __tablename__ = "preferencias"
 
@@ -574,6 +585,30 @@ async def obtener_metricas() -> dict:
             "por_idioma": por_idioma,
             "tasa_conversion": round(total_leads / total_conversaciones * 100, 1) if total_conversaciones else 0,
         }
+
+
+# ── Notas del asesor ──────────────────────────────────────────────────────────
+
+async def guardar_nota(telefono: str, texto: str, asesor: str = "") -> None:
+    async with async_session() as session:
+        session.add(NotaLead(telefono=telefono, texto=texto.strip(), asesor=asesor, creado_at=datetime.utcnow()))
+        await session.commit()
+
+
+async def obtener_notas(telefono: str) -> list[dict]:
+    async with async_session() as session:
+        result = await session.execute(
+            select(NotaLead).where(NotaLead.telefono == telefono).order_by(NotaLead.creado_at.asc())
+        )
+        return [
+            {
+                "id": n.id,
+                "texto": n.texto,
+                "asesor": n.asesor,
+                "creado_at": _col(n.creado_at),
+            }
+            for n in result.scalars().all()
+        ]
 
 
 # ── Broadcast ─────────────────────────────────────────────────────────────────
