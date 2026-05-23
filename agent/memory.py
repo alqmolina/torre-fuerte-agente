@@ -4,7 +4,7 @@ import os
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import String, Text, DateTime, select, Integer, Boolean
+from sqlalchemy import String, Text, DateTime, select, Integer, Boolean, func, distinct
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -459,3 +459,92 @@ async def obtener_leads_pendientes_handoff(minutos: int = 20) -> list[dict]:
                 })
 
         return pendientes
+
+
+# ── Métricas ──────────────────────────────────────────────────────────────────
+
+async def obtener_metricas() -> dict:
+    """Retorna todas las métricas del agente para el dashboard."""
+    now = datetime.utcnow()
+    hoy = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    semana = hoy - timedelta(days=7)
+    mes = hoy - timedelta(days=30)
+
+    async with async_session() as session:
+        total_leads = (await session.scalar(select(func.count(Lead.id)))) or 0
+        total_conversaciones = (await session.scalar(
+            select(func.count(distinct(Mensaje.telefono)))
+        )) or 0
+
+        leads_hoy = (await session.scalar(
+            select(func.count(Lead.id)).where(Lead.fecha >= hoy)
+        )) or 0
+        leads_semana = (await session.scalar(
+            select(func.count(Lead.id)).where(Lead.fecha >= semana)
+        )) or 0
+        leads_mes = (await session.scalar(
+            select(func.count(Lead.id)).where(Lead.fecha >= mes)
+        )) or 0
+
+        temp_rows = await session.execute(
+            select(Lead.temperatura, func.count(Lead.id)).group_by(Lead.temperatura)
+        )
+        por_temperatura = {(r[0] or "sin datos"): r[1] for r in temp_rows}
+
+        int_rows = await session.execute(
+            select(Lead.intencion, func.count(Lead.id)).group_by(Lead.intencion)
+        )
+        por_intencion = {(r[0] or "sin datos"): r[1] for r in int_rows}
+
+        apto_rows = await session.execute(
+            select(Lead.apto, func.count(Lead.id))
+            .where(Lead.apto != "")
+            .group_by(Lead.apto)
+            .order_by(func.count(Lead.id).desc())
+            .limit(6)
+        )
+        aptos_top = [(r[0], r[1]) for r in apto_rows]
+
+        hab_rows = await session.execute(
+            select(Lead.habitaciones, func.count(Lead.id))
+            .where(Lead.habitaciones != "")
+            .group_by(Lead.habitaciones)
+            .order_by(func.count(Lead.id).desc())
+        )
+        por_habitaciones = [(r[0], r[1]) for r in hab_rows]
+
+        total_handoffs = (await session.scalar(select(func.count(Handoff.telefono)))) or 0
+        handoffs_activos = (await session.scalar(
+            select(func.count(Handoff.telefono)).where(Handoff.activo == True)
+        )) or 0
+
+        total_seguimientos = (await session.scalar(select(func.count(SeguimientoLead.id)))) or 0
+        seg_rows = await session.execute(
+            select(SeguimientoLead.numero, func.count(SeguimientoLead.id))
+            .group_by(SeguimientoLead.numero)
+        )
+        seguimientos_por_numero = {r[0]: r[1] for r in seg_rows}
+
+        idioma_rows = await session.execute(
+            select(Preferencia.idioma, func.count(Preferencia.telefono))
+            .group_by(Preferencia.idioma)
+        )
+        por_idioma = {(r[0] or "es"): r[1] for r in idioma_rows}
+
+        return {
+            "total_leads": total_leads,
+            "total_conversaciones": total_conversaciones,
+            "leads_hoy": leads_hoy,
+            "leads_semana": leads_semana,
+            "leads_mes": leads_mes,
+            "por_temperatura": por_temperatura,
+            "por_intencion": por_intencion,
+            "aptos_top": aptos_top,
+            "por_habitaciones": por_habitaciones,
+            "total_handoffs": total_handoffs,
+            "handoffs_activos": handoffs_activos,
+            "total_seguimientos": total_seguimientos,
+            "seguimientos_por_numero": seguimientos_por_numero,
+            "por_idioma": por_idioma,
+            "tasa_conversion": round(total_leads / total_conversaciones * 100, 1) if total_conversaciones else 0,
+        }

@@ -19,6 +19,7 @@ from agent.memory import (
     guardar_mensaje,
     desactivar_handoff,
     limpiar_historial,
+    obtener_metricas,
     Handoff,
     async_session,
 )
@@ -269,6 +270,7 @@ async def admin_index(request: Request):
       <div style="font-size:13px;opacity:0.7;margin-top:2px">Conversaciones en transferencia</div>
     </div>
     {badge}
+    <a href="/admin/dashboard" style="color:rgba(255,255,255,0.8);font-size:12px;text-decoration:none;margin-right:12px">📊 Métricas</a>
     <a href="/admin/logout" style="color:rgba(255,255,255,0.6);font-size:12px;text-decoration:none">Salir</a>
   </div>
   <div class="container">
@@ -527,6 +529,192 @@ async def admin_send_media(telefono: str, request: Request, archivo: UploadFile 
         await guardar_mensaje(telefono, "assistant", f"[Asesor envió {tipo}: {filename}]")
         return {"status": "ok"}
     return {"error": "No se pudo enviar el archivo"}
+
+
+@router.get("/dashboard", response_class=HTMLResponse)
+async def admin_dashboard(request: Request):
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
+
+    m = await obtener_metricas()
+
+    def barra(valor, maximo, color):
+        pct = round(valor / maximo * 100) if maximo else 0
+        return f'<div style="height:8px;background:#eee;border-radius:4px;margin-top:4px"><div style="width:{pct}%;height:100%;background:{color};border-radius:4px"></div></div>'
+
+    def fila_bar(label, valor, total, color, emoji=""):
+        pct = round(valor / total * 100) if total else 0
+        return f"""
+        <div style="margin-bottom:12px">
+          <div style="display:flex;justify-content:space-between;font-size:14px">
+            <span>{emoji} {_esc(label)}</span>
+            <span style="font-weight:600">{valor} <span style="color:#999;font-weight:400">({pct}%)</span></span>
+          </div>
+          {barra(valor, total, color)}
+        </div>"""
+
+    # Temperatura
+    total_leads = m["total_leads"]
+    temp_html = ""
+    temp_config = [("caliente", "#e74c3c", "🔥"), ("tibio", "#f39c12", "🌡️"), ("frío", "#3498db", "❄️"), ("frio", "#3498db", "❄️")]
+    for temp, color, emoji in temp_config:
+        v = m["por_temperatura"].get(temp, 0)
+        if v:
+            temp_html += fila_bar(temp.upper(), v, total_leads, color, emoji)
+    if not temp_html:
+        temp_html = '<p style="color:#aaa;font-size:13px">Sin datos aún</p>'
+
+    # Intención
+    int_html = ""
+    int_config = [("vivir", "#27ae60", "🏠"), ("inversión", "#9b59b6", "💼"), ("inversion", "#9b59b6", "💼")]
+    for intent, color, emoji in int_config:
+        v = m["por_intencion"].get(intent, 0)
+        if v:
+            int_html += fila_bar(intent.capitalize(), v, total_leads, color, emoji)
+    if not int_html:
+        int_html = '<p style="color:#aaa;font-size:13px">Sin datos aún</p>'
+
+    # Apartamentos top
+    aptos_html = ""
+    max_apto = m["aptos_top"][0][1] if m["aptos_top"] else 1
+    for apto, cnt in m["aptos_top"]:
+        aptos_html += fila_bar(apto, cnt, max_apto, "#1a3c5e", "🏢")
+    if not aptos_html:
+        aptos_html = '<p style="color:#aaa;font-size:13px">Sin datos aún</p>'
+
+    # Habitaciones
+    hab_html = ""
+    max_hab = m["por_habitaciones"][0][1] if m["por_habitaciones"] else 1
+    for hab, cnt in m["por_habitaciones"]:
+        hab_html += fila_bar(f"{hab} hab.", cnt, max_hab, "#16a085", "🛏️")
+    if not hab_html:
+        hab_html = '<p style="color:#aaa;font-size:13px">Sin datos aún</p>'
+
+    # Idioma
+    total_pref = sum(m["por_idioma"].values()) or 1
+    idioma_html = fila_bar("Español", m["por_idioma"].get("es", 0), total_pref, "#e67e22", "🇨🇴")
+    idioma_html += fila_bar("English", m["por_idioma"].get("en", 0), total_pref, "#2980b9", "🇺🇸")
+
+    seg1 = m["seguimientos_por_numero"].get(1, 0)
+    seg2 = m["seguimientos_por_numero"].get(2, 0)
+
+    return f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Torre Fuerte — Dashboard</title>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; }}
+    .header {{ background: #1a3c5e; color: white; padding: 16px 20px; display: flex; align-items: center; gap: 12px; }}
+    .container {{ max-width: 900px; margin: 0 auto; padding: 20px 16px; }}
+    .grid-4 {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 20px; }}
+    .grid-2 {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin-bottom: 14px; }}
+    .kpi {{ background: white; border-radius: 12px; padding: 18px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); text-align: center; }}
+    .kpi .val {{ font-size: 36px; font-weight: 700; color: #1a3c5e; line-height: 1.1; }}
+    .kpi .lbl {{ font-size: 12px; color: #888; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }}
+    .kpi .sub {{ font-size: 11px; color: #bbb; margin-top: 2px; }}
+    .card {{ background: white; border-radius: 12px; padding: 18px 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }}
+    .card h3 {{ font-size: 13px; font-weight: 700; color: #1a3c5e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 14px; }}
+    .badge {{ display:inline-block; padding:3px 10px; border-radius:12px; font-size:12px; font-weight:600; }}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/admin" style="color:white;text-decoration:none;font-size:20px">←</a>
+    <div style="flex:1">
+      <div style="font-size:18px;font-weight:600">Torre Fuerte · Dashboard</div>
+      <div style="font-size:12px;opacity:0.7">Métricas del agente en tiempo real</div>
+    </div>
+    <a href="/admin/logout" style="color:rgba(255,255,255,0.6);font-size:12px;text-decoration:none">Salir</a>
+  </div>
+
+  <div class="container">
+    <div class="grid-4">
+      <div class="kpi">
+        <div class="val">{m['total_leads']}</div>
+        <div class="lbl">Total Leads</div>
+        <div class="sub">+{m['leads_hoy']} hoy · +{m['leads_semana']} esta semana</div>
+      </div>
+      <div class="kpi">
+        <div class="val">{m['total_conversaciones']}</div>
+        <div class="lbl">Conversaciones</div>
+        <div class="sub">Números únicos atendidos</div>
+      </div>
+      <div class="kpi">
+        <div class="val" style="color:{'#e74c3c' if m['handoffs_activos'] else '#27ae60'}">{m['handoffs_activos']}</div>
+        <div class="lbl">Handoffs Activos</div>
+        <div class="sub">{m['total_handoffs']} transferencias totales</div>
+      </div>
+      <div class="kpi">
+        <div class="val">{m['tasa_conversion']}%</div>
+        <div class="lbl">Tasa Calificación</div>
+        <div class="sub">Leads / conversaciones</div>
+      </div>
+    </div>
+
+    <div class="grid-4" style="margin-bottom:20px">
+      <div class="kpi" style="background:#fff8e1;border:1px solid #f0d96a">
+        <div class="val" style="color:#d68910">{m['leads_hoy']}</div>
+        <div class="lbl">Leads hoy</div>
+      </div>
+      <div class="kpi" style="background:#eafaf1;border:1px solid #a9dfbf">
+        <div class="val" style="color:#27ae60">{m['leads_semana']}</div>
+        <div class="lbl">Últimos 7 días</div>
+      </div>
+      <div class="kpi" style="background:#eaf2fb;border:1px solid #aed6f1">
+        <div class="val" style="color:#2980b9">{m['leads_mes']}</div>
+        <div class="lbl">Últimos 30 días</div>
+      </div>
+      <div class="kpi" style="background:#f4f6f7;border:1px solid #d5dbdb">
+        <div class="val" style="color:#555">{m['total_seguimientos']}</div>
+        <div class="lbl">Seguimientos enviados</div>
+        <div class="sub">#{seg1} primeros · #{seg2} segundos</div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3>🌡️ Temperatura de leads</h3>
+        {temp_html}
+      </div>
+      <div class="card">
+        <h3>💼 Intención de compra</h3>
+        {int_html}
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3>🏢 Apartamentos más consultados</h3>
+        {aptos_html}
+      </div>
+      <div class="card">
+        <h3>🛏️ Habitaciones solicitadas</h3>
+        {hab_html}
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3>🌐 Idioma de los leads</h3>
+        {idioma_html}
+      </div>
+      <div class="card" style="display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px">
+        <a href="/leads/export" style="display:block;background:#1a3c5e;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px">
+          📥 Descargar Excel de Leads
+        </a>
+        <a href="/admin" style="display:block;background:#f0f4f8;color:#1a3c5e;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;border:1px solid #d0dce8">
+          💬 Ver conversaciones activas
+        </a>
+      </div>
+    </div>
+
+    <p style="text-align:center;font-size:12px;color:#bbb;margin-top:20px">Actualiza al recargar la página</p>
+  </div>
+</body>
+</html>"""
 
 
 @router.post("/close/{telefono}")
