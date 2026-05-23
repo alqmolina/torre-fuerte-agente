@@ -15,6 +15,7 @@ logger = logging.getLogger("agentkit")
 from agent.memory import (
     obtener_historial,
     obtener_handoffs_activos,
+    obtener_perfil_lead,
     guardar_mensaje,
     desactivar_handoff,
 )
@@ -283,6 +284,8 @@ async def admin_chat(telefono: str, request: Request):
         return RedirectResponse("/admin/login", status_code=302)
 
     historial = await obtener_historial(telefono, limite=100)
+    perfil = await obtener_perfil_lead(telefono)
+    nombre = _esc(perfil["nombre"]) if perfil and perfil.get("nombre") else ""
 
     mensajes_html = ""
     for msg in historial:
@@ -355,7 +358,9 @@ async def admin_chat(telefono: str, request: Request):
   <div class="header">
     <a href="/admin" class="back">←</a>
     <div style="flex:1;min-width:0">
-      <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">📱 {tel_esc}</div>
+      <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+        {nombre + ' &nbsp;·&nbsp; ' if nombre else ''}📱 {tel_esc}
+      </div>
       <div style="font-size:12px;opacity:0.7">Respondiendo como Torre Fuerte</div>
     </div>
     <form method="post" action="/admin/close/{tel_esc}" style="margin:0">
