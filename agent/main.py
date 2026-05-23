@@ -266,7 +266,7 @@ async def debug():
         "EMAIL_LEADS": os.getenv("EMAIL_LEADS", "NO CONFIGURADO"),
         "PORT": os.getenv("PORT", "NO CONFIGURADO"),
         "ADMIN_USER": os.getenv("ADMIN_USER", "NO CONFIGURADO"),
-        "DATABASE_URL": "postgresql (configurado)" if os.getenv("DATABASE_URL", "").startswith("postgresql") else ("sqlite (local)" if not os.getenv("DATABASE_URL") else "configurado"),
+        "DATABASE_URL": "postgresql (configurado)" if (os.getenv("POSTGRES_URL", "") or os.getenv("DATABASE_URL", "")).startswith("postgresql") else "sqlite (local — agrega POSTGRES_URL en Railway)",
     }
 
 

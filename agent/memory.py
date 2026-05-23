@@ -9,7 +9,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./agentkit.db")
+DATABASE_URL = (
+    os.getenv("POSTGRES_URL") or
+    os.getenv("DATABASE_URL") or
+    "sqlite+aiosqlite:///./agentkit.db"
+)
 
 if DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
