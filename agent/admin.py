@@ -330,6 +330,16 @@ async def admin_chat(telefono: str, request: Request):
     intencion = _esc(intencion_raw.capitalize()) if intencion_raw else ""
     resumen_html = _esc(resumen_raw).replace("\n", "<br>") if resumen_raw else ""
 
+    if notas:
+        notas_items_html = "".join(
+            '<div style="padding:7px 0;border-bottom:1px solid #ede0ff;font-size:13px;color:#333;line-height:1.4">'
+            f'<span style="font-size:10px;color:#aaa;margin-right:8px">{_esc(n["creado_at"])}</span>'
+            f'{_esc(n["texto"])}</div>'
+            for n in notas
+        )
+    else:
+        notas_items_html = '<p style="font-size:12px;color:#bbb;padding:6px 0">Sin notas aún</p>'
+
     partes_info = []
     if apto:
         partes_info.append(f"🏠 {apto}")
@@ -435,9 +445,7 @@ async def admin_chat(telefono: str, request: Request):
       📝 NOTAS INTERNAS <span style="background:#7c4dbd;color:white;border-radius:10px;padding:1px 7px;font-size:10px">{len(notas)}</span>
     </summary>
     <div style="padding:0 16px 12px">
-      {''.join(f"""<div style="padding:7px 0;border-bottom:1px solid #ede0ff;font-size:13px;color:#333;line-height:1.4">
-        <span style="font-size:10px;color:#aaa;margin-right:8px">{_esc(n['creado_at'])}</span>{_esc(n['texto'])}
-      </div>""" for n in notas) if notas else '<p style="font-size:12px;color:#bbb;padding:6px 0">Sin notas aún</p>'}
+      {notas_items_html}
       <form method="post" action="/admin/nota/{tel_esc}" style="margin-top:10px;display:flex;gap:6px">
         <input type="text" name="texto" placeholder="Agregar nota interna..." required maxlength="500"
                style="flex:1;border:1px solid #c5b4e8;border-radius:6px;padding:7px 10px;font-size:13px;outline:none;font-family:inherit">
