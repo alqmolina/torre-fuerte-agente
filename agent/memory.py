@@ -79,6 +79,32 @@ class SeguimientoLead(Base):
     enviado_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class Broadcast(Base):
+    """Campaña de broadcast masivo."""
+    __tablename__ = "broadcasts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mensaje: Mapped[str] = mapped_column(Text)
+    filtros: Mapped[str] = mapped_column(Text, default="")
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    enviados: Mapped[int] = mapped_column(Integer, default=0)
+    fallidos: Mapped[int] = mapped_column(Integer, default=0)
+    estado: Mapped[str] = mapped_column(String(20), default="en_proceso")
+    creado_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class BroadcastLog(Base):
+    """Log individual de cada envío de broadcast."""
+    __tablename__ = "broadcast_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    broadcast_id: Mapped[int] = mapped_column(Integer, index=True)
+    telefono: Mapped[str] = mapped_column(String(50))
+    nombre: Mapped[str] = mapped_column(String(200), default="")
+    ok: Mapped[bool] = mapped_column(Boolean, default=True)
+    enviado_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class Preferencia(Base):
     __tablename__ = "preferencias"
 
@@ -548,3 +574,98 @@ async def obtener_metricas() -> dict:
             "por_idioma": por_idioma,
             "tasa_conversion": round(total_leads / total_conversaciones * 100, 1) if total_conversaciones else 0,
         }
+
+
+# ── Broadcast ─────────────────────────────────────────────────────────────────
+
+async def obtener_leads_filtrados(
+    temperaturas: list[str] | None = None,
+    idioma: str = "",
+    intencion: str = "",
+) -> list[dict]:
+    """Leads que coinciden con los filtros para un broadcast."""
+    async with async_session() as session:
+        query = select(Lead)
+        if temperaturas:
+            all_temps: set[str] = set()
+            for t in temperaturas:
+                all_temps.add(t)
+                if t == "frío":
+                    all_temps.add("frio")
+                elif t == "frio":
+                    all_temps.add("frío")
+            query = query.where(Lead.temperatura.in_(list(all_temps)))
+        if intencion:
+            if intencion in ("inversión", "inversion"):
+                query = query.where(Lead.intencion.in_(["inversión", "inversion"]))
+            else:
+                query = query.where(Lead.intencion == intencion)
+
+        result = await session.execute(query)
+        leads = result.scalars().all()
+
+        output = []
+        for lead in leads:
+            pref_res = await session.execute(
+                select(Preferencia).where(Preferencia.telefono == lead.telefono)
+            )
+            pref = pref_res.scalar_one_or_none()
+            lead_idioma = pref.idioma if pref else "es"
+            if idioma and lead_idioma != idioma:
+                continue
+            output.append({
+                "telefono": lead.telefono,
+                "nombre": lead.nombre or "",
+                "idioma": lead_idioma,
+            })
+        return output
+
+
+async def crear_broadcast(mensaje: str, filtros: str, total: int) -> int:
+    async with async_session() as session:
+        b = Broadcast(mensaje=mensaje, filtros=filtros, total=total,
+                      estado="en_proceso", creado_at=datetime.utcnow())
+        session.add(b)
+        await session.commit()
+        await session.refresh(b)
+        return b.id
+
+
+async def actualizar_broadcast(broadcast_id: int, enviados: int, fallidos: int):
+    async with async_session() as session:
+        result = await session.execute(select(Broadcast).where(Broadcast.id == broadcast_id))
+        b = result.scalar_one_or_none()
+        if b:
+            b.enviados = enviados
+            b.fallidos = fallidos
+            b.estado = "completado"
+            await session.commit()
+
+
+async def registrar_broadcast_log(broadcast_id: int, telefono: str, nombre: str, ok: bool):
+    async with async_session() as session:
+        session.add(BroadcastLog(
+            broadcast_id=broadcast_id, telefono=telefono, nombre=nombre,
+            ok=ok, enviado_at=datetime.utcnow()
+        ))
+        await session.commit()
+
+
+async def obtener_historial_broadcasts() -> list[dict]:
+    async with async_session() as session:
+        result = await session.execute(
+            select(Broadcast).order_by(Broadcast.creado_at.desc()).limit(30)
+        )
+        return [
+            {
+                "id": b.id,
+                "mensaje": b.mensaje[:120],
+                "filtros": b.filtros,
+                "total": b.total,
+                "enviados": b.enviados,
+                "fallidos": b.fallidos,
+                "estado": b.estado,
+                "creado_at": _col(b.creado_at),
+            }
+            for b in result.scalars().all()
+        ]

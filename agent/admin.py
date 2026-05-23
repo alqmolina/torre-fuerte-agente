@@ -1,5 +1,7 @@
 # agent/admin.py — Panel de admin para atención humana en handoff
 
+import asyncio
+import json
 import os
 import hmac
 import hashlib
@@ -7,8 +9,9 @@ import secrets
 import time
 import httpx
 import logging
+from typing import List
 from fastapi import APIRouter, Form, Request, UploadFile, File
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 logger = logging.getLogger("agentkit")
 
@@ -20,6 +23,11 @@ from agent.memory import (
     desactivar_handoff,
     limpiar_historial,
     obtener_metricas,
+    obtener_leads_filtrados,
+    crear_broadcast,
+    actualizar_broadcast,
+    registrar_broadcast_log,
+    obtener_historial_broadcasts,
     Handoff,
     async_session,
 )
@@ -270,6 +278,7 @@ async def admin_index(request: Request):
       <div style="font-size:13px;opacity:0.7;margin-top:2px">Conversaciones en transferencia</div>
     </div>
     {badge}
+    <a href="/admin/broadcast" style="color:rgba(255,255,255,0.8);font-size:12px;text-decoration:none;margin-right:12px">📢 Broadcast</a>
     <a href="/admin/dashboard" style="color:rgba(255,255,255,0.8);font-size:12px;text-decoration:none;margin-right:12px">📊 Métricas</a>
     <a href="/admin/logout" style="color:rgba(255,255,255,0.6);font-size:12px;text-decoration:none">Salir</a>
   </div>
@@ -702,10 +711,13 @@ async def admin_dashboard(request: Request):
         {idioma_html}
       </div>
       <div class="card" style="display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px">
-        <a href="/leads/export" style="display:block;background:#1a3c5e;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px">
+        <a href="/leads/export" style="display:block;background:#1a3c5e;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;width:100%;text-align:center">
           📥 Descargar Excel de Leads
         </a>
-        <a href="/admin" style="display:block;background:#f0f4f8;color:#1a3c5e;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;border:1px solid #d0dce8">
+        <a href="/admin/broadcast" style="display:block;background:#1a5276;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;width:100%;text-align:center">
+          📢 Enviar Broadcast
+        </a>
+        <a href="/admin" style="display:block;background:#f0f4f8;color:#1a3c5e;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;border:1px solid #d0dce8;width:100%;text-align:center">
           💬 Ver conversaciones activas
         </a>
       </div>
@@ -713,6 +725,289 @@ async def admin_dashboard(request: Request):
 
     <p style="text-align:center;font-size:12px;color:#bbb;margin-top:20px">Actualiza al recargar la página</p>
   </div>
+</body>
+</html>"""
+
+
+# ── Broadcast ─────────────────────────────────────────────────────────────────
+
+async def _ejecutar_broadcast(broadcast_id: int, leads: list[dict], mensaje: str):
+    """Worker en background: envía el mensaje a cada lead con pausa entre envíos."""
+    enviados = 0
+    fallidos = 0
+    for lead in leads:
+        nombre = lead["nombre"] or ""
+        texto = mensaje.replace("{{nombre}}", nombre).replace("{{name}}", nombre)
+        try:
+            ok = await proveedor.enviar_mensaje(lead["telefono"], texto) if proveedor else False
+            await registrar_broadcast_log(broadcast_id, lead["telefono"], nombre, ok)
+            if ok:
+                enviados += 1
+            else:
+                fallidos += 1
+        except Exception as exc:
+            logger.error(f"Broadcast error {lead['telefono']}: {exc}")
+            fallidos += 1
+            await registrar_broadcast_log(broadcast_id, lead["telefono"], nombre, False)
+        await asyncio.sleep(0.35)
+    await actualizar_broadcast(broadcast_id, enviados, fallidos)
+    logger.info(f"Broadcast {broadcast_id} completado: {enviados} ok / {fallidos} fallidos")
+
+
+@router.get("/broadcast", response_class=HTMLResponse)
+async def broadcast_form(request: Request):
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
+
+    return """<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Torre Fuerte — Broadcast</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; }
+    .header { background: #1a3c5e; color: white; padding: 16px 20px; display: flex; align-items: center; gap: 12px; }
+    .container { max-width: 660px; margin: 0 auto; padding: 20px 16px; }
+    .card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 16px; }
+    .card h3 { font-size: 13px; font-weight: 700; color: #1a3c5e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px; }
+    label { font-size: 13px; font-weight: 600; color: #555; }
+    select { border: 1px solid #ddd; border-radius: 8px; padding: 9px 12px; font-size: 14px; width: 100%; outline: none; }
+    select:focus { border-color: #1a3c5e; }
+    .check-group { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
+    .check-group label { font-weight: 400; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+    textarea { width: 100%; border: 1px solid #ddd; border-radius: 8px; padding: 12px 14px;
+               font-size: 15px; font-family: inherit; resize: vertical; outline: none; line-height: 1.5; }
+    textarea:focus { border-color: #1a3c5e; }
+    .btn-primary { width: 100%; background: #1a3c5e; color: white; border: none; border-radius: 8px;
+                   padding: 14px; font-size: 16px; font-weight: 600; cursor: pointer; }
+    .btn-primary:hover { background: #15304e; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-sec { background: #f0f4f8; color: #1a3c5e; border: 1px solid #d0dce8; border-radius: 8px;
+               padding: 9px 18px; font-size: 14px; font-weight: 600; cursor: pointer; }
+    .btn-sec:hover { background: #e2eaf3; }
+    .preview-box { margin-top: 12px; padding: 10px 14px; border-radius: 8px; font-size: 14px;
+                   background: #eaf2fb; color: #1a56db; display: none; }
+    .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/admin" style="color:white;text-decoration:none;font-size:20px">←</a>
+    <div style="flex:1">
+      <div style="font-size:18px;font-weight:600">Torre Fuerte · Broadcast</div>
+      <div style="font-size:12px;opacity:0.7">Envío masivo segmentado a leads</div>
+    </div>
+    <a href="/admin/broadcast/historial" style="color:rgba(255,255,255,0.8);font-size:12px;text-decoration:none;margin-right:12px">📋 Historial</a>
+    <a href="/admin/logout" style="color:rgba(255,255,255,0.6);font-size:12px;text-decoration:none">Salir</a>
+  </div>
+
+  <div class="container">
+    <div class="card">
+      <h3>🎯 Filtros de destinatarios</h3>
+      <label>Temperatura</label>
+      <div class="check-group">
+        <label><input type="checkbox" name="temp" value="caliente" checked> 🔥 Caliente</label>
+        <label><input type="checkbox" name="temp" value="tibio" checked> 🌡️ Tibio</label>
+        <label><input type="checkbox" name="temp" value="frío" checked> ❄️ Frío</label>
+      </div>
+      <div class="field-row">
+        <div>
+          <label>Idioma</label>
+          <select id="idioma" style="margin-top:6px">
+            <option value="">Todos</option>
+            <option value="es">🇨🇴 Español</option>
+            <option value="en">🇺🇸 English</option>
+          </select>
+        </div>
+        <div>
+          <label>Intención</label>
+          <select id="intencion" style="margin-top:6px">
+            <option value="">Todos</option>
+            <option value="vivir">🏠 Vivir</option>
+            <option value="inversión">💼 Inversión</option>
+          </select>
+        </div>
+      </div>
+      <div style="margin-top:14px">
+        <button class="btn-sec" onclick="calcularDestinatarios()">🔍 Calcular destinatarios</button>
+        <div class="preview-box" id="preview"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>✉️ Mensaje</h3>
+      <p style="font-size:12px;color:#888;margin-bottom:10px">
+        Usa <code style="background:#f4f6f7;padding:1px 5px;border-radius:4px">{{nombre}}</code> para personalizar con el nombre del lead.
+      </p>
+      <textarea id="mensaje" rows="6" placeholder="Hola {{nombre}}, te escribimos desde Torre Fuerte con una novedad especial..."></textarea>
+      <div style="text-align:right;font-size:12px;color:#aaa;margin-top:4px" id="chars">0 caracteres</div>
+    </div>
+
+    <button class="btn-primary" id="send-btn" onclick="enviarBroadcast()">📤 Enviar broadcast</button>
+    <p style="text-align:center;font-size:12px;color:#aaa;margin-top:10px">
+      El envío se realiza en segundo plano. Monitorea el progreso en el historial.
+    </p>
+  </div>
+
+  <script>
+    document.getElementById('mensaje').addEventListener('input', function() {
+      document.getElementById('chars').textContent = this.value.length + ' caracteres';
+    });
+
+    function _filtros() {
+      const temps = Array.from(document.querySelectorAll('input[name="temp"]:checked')).map(c => c.value);
+      return {
+        temperaturas: temps,
+        idioma: document.getElementById('idioma').value,
+        intencion: document.getElementById('intencion').value,
+      };
+    }
+
+    async function calcularDestinatarios() {
+      const f = _filtros();
+      if (!f.temperaturas.length) { alert('Selecciona al menos una temperatura'); return; }
+      const body = new URLSearchParams({ idioma: f.idioma, intencion: f.intencion });
+      f.temperaturas.forEach(t => body.append('temperaturas', t));
+      const r = await fetch('/admin/broadcast/preview', { method: 'POST', body });
+      const data = await r.json();
+      const box = document.getElementById('preview');
+      box.style.display = 'block';
+      box.innerHTML = '<strong>' + data.count + ' leads</strong> recibirán este mensaje';
+    }
+
+    async function enviarBroadcast() {
+      const f = _filtros();
+      const mensaje = document.getElementById('mensaje').value.trim();
+      if (!mensaje) { alert('Escribe un mensaje antes de enviar'); return; }
+      if (!f.temperaturas.length) { alert('Selecciona al menos una temperatura'); return; }
+      if (!confirm('¿Confirmar envío del broadcast? Esta acción enviará mensajes de WhatsApp reales.')) return;
+
+      const btn = document.getElementById('send-btn');
+      btn.disabled = true;
+      btn.textContent = '⏳ Iniciando envío...';
+
+      const body = new URLSearchParams({ idioma: f.idioma, intencion: f.intencion, mensaje });
+      f.temperaturas.forEach(t => body.append('temperaturas', t));
+
+      const r = await fetch('/admin/broadcast', { method: 'POST', body });
+      const data = await r.json();
+      if (data.ok) {
+        window.location.href = '/admin/broadcast/historial';
+      } else {
+        btn.disabled = false;
+        btn.textContent = '📤 Enviar broadcast';
+        alert('Error: ' + (data.error || 'No se pudo iniciar el broadcast'));
+      }
+    }
+  </script>
+</body>
+</html>"""
+
+
+@router.post("/broadcast/preview")
+async def broadcast_preview(
+    request: Request,
+    temperaturas: List[str] = Form(default=[]),
+    idioma: str = Form(default=""),
+    intencion: str = Form(default=""),
+):
+    if not _autenticado(request):
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
+    leads = await obtener_leads_filtrados(temperaturas or None, idioma, intencion)
+    return JSONResponse({"count": len(leads)})
+
+
+@router.post("/broadcast")
+async def broadcast_enviar(
+    request: Request,
+    temperaturas: List[str] = Form(default=[]),
+    idioma: str = Form(default=""),
+    intencion: str = Form(default=""),
+    mensaje: str = Form(...),
+):
+    if not _autenticado(request):
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
+    if not mensaje.strip():
+        return JSONResponse({"error": "Mensaje vacío"})
+    if not temperaturas:
+        return JSONResponse({"error": "Selecciona al menos una temperatura"})
+
+    leads = await obtener_leads_filtrados(temperaturas, idioma, intencion)
+    if not leads:
+        return JSONResponse({"error": "No hay leads que coincidan con los filtros seleccionados"})
+
+    filtros_str = json.dumps({"temperaturas": temperaturas, "idioma": idioma, "intencion": intencion}, ensure_ascii=False)
+    broadcast_id = await crear_broadcast(mensaje.strip(), filtros_str, len(leads))
+    asyncio.create_task(_ejecutar_broadcast(broadcast_id, leads, mensaje.strip()))
+
+    return JSONResponse({"ok": True, "id": broadcast_id, "total": len(leads)})
+
+
+@router.get("/broadcast/historial", response_class=HTMLResponse)
+async def broadcast_historial(request: Request):
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
+
+    campanas = await obtener_historial_broadcasts()
+
+    filas = ""
+    for c in campanas:
+        estado_color = "#27ae60" if c["estado"] == "completado" else "#f39c12"
+        estado_label = "✅ Completado" if c["estado"] == "completado" else "⏳ En proceso"
+        pct = round(c["enviados"] / c["total"] * 100) if c["total"] else 0
+        filas += f"""
+        <div style="background:white;border-radius:10px;padding:16px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08)">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:8px">
+            <div style="font-size:14px;color:#333;line-height:1.4;flex:1">"{_esc(c['mensaje'])}{"..." if len(c["mensaje"]) >= 120 else ""}"</div>
+            <span style="color:{estado_color};font-size:12px;font-weight:600;white-space:nowrap">{estado_label}</span>
+          </div>
+          <div style="display:flex;gap:16px;font-size:12px;color:#888;flex-wrap:wrap">
+            <span>📅 {_esc(c['creado_at'])}</span>
+            <span>👥 {c['total']} destinatarios</span>
+            <span style="color:#27ae60">✔ {c['enviados']} enviados</span>
+            {f'<span style="color:#e74c3c">✗ {c["fallidos"]} fallidos</span>' if c['fallidos'] else ''}
+          </div>
+          <div style="margin-top:8px;height:6px;background:#eee;border-radius:3px">
+            <div style="width:{pct}%;height:100%;background:#1a3c5e;border-radius:3px"></div>
+          </div>
+        </div>"""
+
+    if not filas:
+        filas = '<div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:40px;margin-bottom:12px">📭</div><p>Sin campañas aún</p></div>'
+
+    return f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Broadcast — Historial</title>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; }}
+    .header {{ background: #1a3c5e; color: white; padding: 16px 20px; display: flex; align-items: center; gap: 12px; }}
+    .container {{ max-width: 700px; margin: 0 auto; padding: 20px 16px; }}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/admin/broadcast" style="color:white;text-decoration:none;font-size:20px">←</a>
+    <div style="flex:1">
+      <div style="font-size:18px;font-weight:600">Broadcast · Historial</div>
+      <div style="font-size:12px;opacity:0.7">Últimas 30 campañas</div>
+    </div>
+    <a href="/admin/broadcast" style="color:rgba(255,255,255,0.8);font-size:12px;text-decoration:none;margin-right:12px">+ Nueva campaña</a>
+    <a href="/admin/logout" style="color:rgba(255,255,255,0.6);font-size:12px;text-decoration:none">Salir</a>
+  </div>
+  <div class="container">
+    {filas}
+  </div>
+  <script>
+    // Recargar si hay campañas en proceso
+    const enProceso = document.querySelector('[style*="f39c12"]');
+    if (enProceso) setTimeout(() => location.reload(), 5000);
+  </script>
 </body>
 </html>"""
 
