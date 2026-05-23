@@ -67,9 +67,9 @@ def _detectar_idioma(texto: str) -> str:
 proveedor = None
 
 
-async def _notificar_handoff(telefono: str, nombre: str, temperatura: str, razon: str, idioma: str, apto: str = "", habitaciones: str = "", email_lead: str = "") -> None:
+async def _notificar_handoff(telefono: str, nombre: str, temperatura: str, razon: str, idioma: str, apto: str = "", habitaciones: str = "", email_lead: str = "", intencion: str = "") -> None:
     """Envía notificación de handoff al asesor por email y WhatsApp (si está configurado)."""
-    enviar_email_handoff(telefono, nombre, temperatura, razon, apto, habitaciones, email_lead)
+    enviar_email_handoff(telefono, nombre, temperatura, razon, apto, habitaciones, email_lead, intencion)
 
     if ASESOR_WHATSAPP and proveedor:
         from agent.tools import ICONOS_TEMPERATURA
@@ -77,8 +77,9 @@ async def _notificar_handoff(telefono: str, nombre: str, temperatura: str, razon
         msg_asesor = (
             f"🔔 *TRANSFERENCIA A ASESOR*\n\n"
             f"📱 Tel: {telefono}\n"
-            f"👤 Nombre: {nombre}\n"
+            f"👤 Nombre: {nombre or 'No indicado'}\n"
             f"🏠 Apto: {apto or 'No especificado'}\n"
+            f"💼 Intención: {intencion or 'No especificada'}\n"
             f"🌡️ Temperatura: {icono} {temperatura.upper()}\n"
             f"📋 Razón: {razon}\n\n"
             f"Responde desde Meta Business Suite:\nbusiness.facebook.com"
@@ -121,6 +122,7 @@ async def _tarea_handoff_inactivos() -> None:
                 await _notificar_handoff(
                     telefono, nombre, temperatura, "inactividad 20 minutos", idioma,
                     lead.get("apto", ""), lead.get("habitaciones", ""), lead.get("email", ""),
+                    lead.get("intencion", ""),
                 )
                 logger.info(f"Handoff automático por inactividad: {nombre} ({telefono})")
 
@@ -351,12 +353,13 @@ async def webhook_handler(request: Request):
                 apto_h = (perfil_h or lead_data or {}).get("apto", "")
                 hab_h = (perfil_h or lead_data or {}).get("habitaciones", "")
                 email_h = (perfil_h or lead_data or {}).get("email", "")
+                intencion_h = (perfil_h or lead_data or {}).get("intencion", "")
 
                 await activar_handoff(msg.telefono, razon_handoff, nombre_h)
                 await registrar_aviso_handoff(msg.telefono)
                 await _notificar_handoff(
                     msg.telefono, nombre_h, temperatura_h, razon_handoff,
-                    idioma, apto_h, hab_h, email_h,
+                    idioma, apto_h, hab_h, email_h, intencion_h,
                 )
                 logger.info(f"Handoff activado para {msg.telefono} — razón: {razon_handoff}")
 

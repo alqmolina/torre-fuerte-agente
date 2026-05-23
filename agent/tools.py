@@ -223,6 +223,7 @@ def enviar_email_handoff(
     apto: str = "",
     habitaciones: str = "",
     email: str = "",
+    intencion: str = "",
 ) -> bool:
     """Notifica al asesor por email que debe tomar esta conversación en Meta Business Suite."""
     if not all([RESEND_API_KEY, EMAIL_LEADS]):
@@ -250,6 +251,8 @@ def enviar_email_handoff(
           <td style="padding:8px 0">{apto or 'No especificado'}</td></tr>
       <tr><td style="padding:8px 0;color:#666">🛏️ Habitaciones</td>
           <td style="padding:8px 0">{habitaciones or 'No especificado'}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">💼 Intención</td>
+          <td style="padding:8px 0">{intencion.capitalize() if intencion else 'No especificada'}</td></tr>
       <tr><td style="padding:8px 0;color:#666">🌡️ Temperatura</td>
           <td style="padding:8px 0"><strong>{temp_texto}</strong></td></tr>
       <tr><td style="padding:8px 0;color:#666">📋 Razón</td>
@@ -277,6 +280,7 @@ def enviar_email_handoff(
             f"Email:        {email or 'No proporcionado'}\n"
             f"Apto interés: {apto or 'No especificado'}\n"
             f"Habitaciones: {habitaciones or 'No especificado'}\n"
+            f"Intención:    {intencion.capitalize() if intencion else 'No especificada'}\n"
             f"Temperatura:  {temp_texto}\n"
             f"Razón:        {razon}\n"
             f"Hora:         {_ahora_colombia()}\n\n"

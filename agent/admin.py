@@ -290,6 +290,8 @@ async def admin_chat(telefono: str, request: Request):
     historial = await obtener_historial(telefono, limite=100)
     perfil = await obtener_perfil_lead(telefono)
     nombre_raw = perfil.get("nombre") if perfil else None
+    apto_raw = perfil.get("apto", "") if perfil else ""
+    intencion_raw = perfil.get("intencion", "") if perfil else ""
 
     if not nombre_raw:
         async with async_session() as _s:
@@ -299,6 +301,15 @@ async def admin_chat(telefono: str, request: Request):
                 nombre_raw = _h.nombre
 
     nombre = _esc(nombre_raw) if nombre_raw else "Desconocido"
+    apto = _esc(apto_raw) if apto_raw else ""
+    intencion = _esc(intencion_raw.capitalize()) if intencion_raw else ""
+
+    partes_info = []
+    if apto:
+        partes_info.append(f"🏠 {apto}")
+    if intencion:
+        partes_info.append(f"💼 {intencion}")
+    subtitulo_extra = " &nbsp;·&nbsp; ".join(partes_info) + (" &nbsp;·&nbsp; " if partes_info else "")
 
     mensajes_html = ""
     for msg in historial:
@@ -374,7 +385,7 @@ async def admin_chat(telefono: str, request: Request):
       <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
         {nombre + ' &nbsp;·&nbsp; ' if nombre else ''}📱 {tel_esc}
       </div>
-      <div style="font-size:12px;opacity:0.7">Respondiendo como Torre Fuerte</div>
+      <div style="font-size:12px;opacity:0.7">{subtitulo_extra}Respondiendo como Torre Fuerte</div>
     </div>
     <form method="post" action="/admin/close/{tel_esc}" style="margin:0">
       <button type="submit" class="close-btn"

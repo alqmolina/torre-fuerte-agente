@@ -70,6 +70,9 @@ async def generar_respuesta(mensaje: str, historial: list[dict], perfil: dict | 
             "Add `[HANDOFF:conversation_completed]` at the END of your response when:\n"
             "- The lead is fully qualified (you have their name, interest, and intent) AND\n"
             "  they have expressed concrete interest in visiting, getting a formal quote, or buying.\n"
+            "CRITICAL: Whenever you emit [HANDOFF], you MUST also emit [LEAD:...] in the SAME response "
+            "with whatever info you have (leave fields empty if unknown). "
+            "Example: [LEAD:John Smith||D-401|3|warm|investment][HANDOFF:requested_by_user]\n"
             "Only emit [HANDOFF] once per conversation. Never emit it in the middle of a message."
         )
     else:
@@ -84,6 +87,9 @@ async def generar_respuesta(mensaje: str, historial: list[dict], perfil: dict | 
             "Agrega `[HANDOFF:conversacion_completada]` AL FINAL de tu respuesta cuando:\n"
             "- El lead esté completamente calificado (tienes su nombre, interés y intención) Y\n"
             "  haya expresado interés concreto en visitar, cotizar formalmente o comprar.\n"
+            "CRÍTICO: Siempre que emitas [HANDOFF], DEBES emitir también [LEAD:...] en la MISMA respuesta "
+            "con toda la info que tengas (deja campos vacíos si no los conoces). "
+            "Ejemplo: [LEAD:Juan Pérez||D-401|3|caliente|vivir][HANDOFF:solicitado_por_usuario]\n"
             "Solo emite [HANDOFF] una vez por conversación. Nunca en medio del texto."
         )
 
