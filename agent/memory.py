@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DATABASE_URL = (
+    os.getenv("TF_DATABASE_URL") or
     os.getenv("POSTGRES_URL") or
     os.getenv("DATABASE_URL") or
     "sqlite+aiosqlite:///./agentkit.db"

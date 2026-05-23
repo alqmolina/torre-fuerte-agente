@@ -265,8 +265,11 @@ async def debug():
         "RESEND_API_KEY": "configurado" if os.getenv("RESEND_API_KEY") else "NO CONFIGURADO",
         "EMAIL_LEADS": os.getenv("EMAIL_LEADS", "NO CONFIGURADO"),
         "PORT": os.getenv("PORT", "NO CONFIGURADO"),
-        "ADMIN_USER": os.getenv("ADMIN_USER", "NO CONFIGURADO"),
-        "DATABASE_URL": "postgresql (configurado)" if (os.getenv("POSTGRES_URL", "") or os.getenv("DATABASE_URL", "")).startswith("postgresql") else "sqlite (local — agrega POSTGRES_URL en Railway)",
+        "ADMIN_USER": os.getenv("TF_ADMIN_USER") or os.getenv("ADMIN_USER", "NO CONFIGURADO"),
+        "DATABASE_URL": "postgresql (configurado)" if any(
+            (os.getenv(k) or "").startswith("postgresql")
+            for k in ("TF_DATABASE_URL", "POSTGRES_URL", "DATABASE_URL")
+        ) else "sqlite (local — agrega TF_DATABASE_URL en Railway)",
     }
 
 
