@@ -492,7 +492,7 @@ async def admin_chat(telefono: str, request: Request):
     <div style="font-size:11px;font-weight:700;color:#b7860b;margin-bottom:4px;letter-spacing:0.5px">📋 RESUMEN DE LA CONVERSACIÓN</div>
     <div style="font-size:13px;color:#555;line-height:1.5">{resumen_html}</div>
   </div>''' if resumen_html else ''}
-  <details style="background:#e8f8f0;border-bottom:1px solid #a9dfbf;flex-shrink:0" {'open' if visitas else ''}>
+  <details style="background:#e8f8f0;border-bottom:1px solid #a9dfbf;flex-shrink:0" open>
     <summary style="padding:10px 16px;cursor:pointer;font-size:11px;font-weight:700;color:#1e8449;letter-spacing:0.5px;user-select:none;list-style:none;display:flex;align-items:center;gap:6px">
       📅 VISITAS AGENDADAS <span style="background:#1e8449;color:white;border-radius:10px;padding:1px 7px;font-size:10px">{len(visitas)}</span>
     </summary>
@@ -586,15 +586,21 @@ async def admin_chat(telefono: str, request: Request):
       }}
     }}
 
+    function _usuarioEditando() {{
+      const tag = (document.activeElement?.tagName || '').toLowerCase();
+      if (['input', 'textarea', 'select'].includes(tag)) return true;
+      const archivo = document.getElementById('fileInput');
+      return !!(archivo && archivo.files && archivo.files[0]);
+    }}
+
     function intentarRefresh() {{
-      const archivo = document.getElementById('fileInput').files[0];
-      if (document.activeElement !== txt && !txt.value.trim() && !archivo) {{
+      if (!_usuarioEditando() && !txt.value.trim()) {{
         location.reload();
       }} else {{
         setTimeout(intentarRefresh, 4000);
       }}
     }}
-    setTimeout(intentarRefresh, 10000);
+    setTimeout(intentarRefresh, 15000);
   </script>
 </body>
 </html>"""
