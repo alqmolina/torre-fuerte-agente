@@ -5,8 +5,12 @@ import hmac
 import hashlib
 import secrets
 import time
-from fastapi import APIRouter, Form, Request
+import httpx
+import logging
+from fastapi import APIRouter, Form, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse
+
+logger = logging.getLogger("agentkit")
 
 from agent.memory import (
     obtener_historial,
@@ -49,6 +53,59 @@ def _valid_token(token: str) -> bool:
         return (int(time.time()) - int(ts)) < 86400  # válido 24 horas
     except Exception:
         return False
+
+
+async def _subir_media_meta(file_bytes: bytes, mime_type: str, filename: str) -> str | None:
+    """Sube un archivo a Meta API y retorna el media_id."""
+    access_token = os.getenv("META_ACCESS_TOKEN")
+    phone_number_id = os.getenv("META_PHONE_NUMBER_ID")
+    if not access_token or not phone_number_id:
+        return None
+    url = f"https://graph.facebook.com/v21.0/{phone_number_id}/media"
+    async with httpx.AsyncClient() as client:
+        r = await client.post(
+            url,
+            headers={"Authorization": f"Bearer {access_token}"},
+            data={"messaging_product": "whatsapp", "type": mime_type},
+            files={"file": (filename, file_bytes, mime_type)},
+            timeout=30,
+        )
+        if r.status_code == 200:
+            return r.json().get("id")
+        logger.error(f"Error subiendo media a Meta: {r.status_code} — {r.text}")
+        return None
+
+
+async def _enviar_media_id_meta(telefono: str, media_id: str, tipo: str, filename: str = "") -> bool:
+    """Envía un mensaje de media usando media_id obtenido de Meta API."""
+    access_token = os.getenv("META_ACCESS_TOKEN")
+    phone_number_id = os.getenv("META_PHONE_NUMBER_ID")
+    url = f"https://graph.facebook.com/v21.0/{phone_number_id}/messages"
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+    media_obj: dict = {"id": media_id}
+    if tipo == "document" and filename:
+        media_obj["filename"] = filename
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": telefono,
+        "type": tipo,
+        tipo: media_obj,
+    }
+    async with httpx.AsyncClient() as client:
+        r = await client.post(url, json=payload, headers=headers, timeout=30)
+        if r.status_code != 200:
+            logger.error(f"Error enviando media Meta: {r.status_code} — {r.text}")
+        return r.status_code == 200
+
+
+def _tipo_media(mime_type: str) -> str:
+    if mime_type.startswith("image/"):
+        return "image"
+    if mime_type.startswith("video/"):
+        return "video"
+    if mime_type.startswith("audio/"):
+        return "audio"
+    return "document"
 
 
 def _autenticado(request: Request) -> bool:
@@ -283,6 +340,15 @@ async def admin_chat(telefono: str, request: Request):
     .close-btn:hover {{ background: rgba(231,76,60,0.8); border-color: transparent; }}
     #sending {{ display:none; position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
                 background:#333; color:white; padding:6px 16px; border-radius:20px; font-size:13px; }}
+    .attach-btn {{ background: none; border: none; font-size: 22px; cursor: pointer;
+                   color: #888; padding: 0 4px; flex-shrink: 0; line-height: 1; }}
+    .attach-btn:hover {{ color: #1a3c5e; }}
+    #file-preview {{ display:none; background:#e8f0fe; border-top:1px solid #d0dff8;
+                     padding:8px 16px; font-size:13px; color:#1a3c5e;
+                     display:none; align-items:center; gap:8px; }}
+    #file-preview span {{ flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+    #file-preview button {{ background:none; border:none; font-size:16px; cursor:pointer;
+                             color:#888; padding:0; line-height:1; }}
   </style>
 </head>
 <body>
@@ -303,7 +369,14 @@ async def admin_chat(telefono: str, request: Request):
     {mensajes_html}
   </div>
   <div id="sending">Enviando...</div>
+  <div id="file-preview">
+    <span id="file-name">📎 archivo</span>
+    <button onclick="limpiarArchivo()" title="Quitar archivo">✕</button>
+  </div>
   <div class="input-area">
+    <input type="file" id="fileInput" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.mp4,.mp3"
+           style="display:none" onchange="archivoSeleccionado(this)">
+    <button class="attach-btn" onclick="document.getElementById('fileInput').click()" title="Adjuntar archivo">📎</button>
     <textarea id="txt" placeholder="Escribe tu mensaje como asesor de Torre Fuerte..."
       rows="1"
       oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px'"
@@ -313,30 +386,56 @@ async def admin_chat(telefono: str, request: Request):
   <script>
     const msgs = document.getElementById('msgs');
     msgs.scrollTop = msgs.scrollHeight;
+    const txt = document.getElementById('txt');
+
+    function archivoSeleccionado(input) {{
+      if (input.files && input.files[0]) {{
+        const preview = document.getElementById('file-preview');
+        document.getElementById('file-name').textContent = '📎 ' + input.files[0].name;
+        preview.style.display = 'flex';
+      }}
+    }}
+
+    function limpiarArchivo() {{
+      document.getElementById('fileInput').value = '';
+      document.getElementById('file-preview').style.display = 'none';
+    }}
 
     async function enviar() {{
-      const txt = document.getElementById('txt');
       const btn = document.getElementById('sendBtn');
       const msg = txt.value.trim();
-      if (!msg) return;
+      const fileInput = document.getElementById('fileInput');
+      const archivo = fileInput.files[0];
+      if (!msg && !archivo) return;
+
       btn.disabled = true;
       document.getElementById('sending').style.display = 'block';
       try {{
-        const res = await fetch('/admin/send/{tel_esc}', {{
-          method: 'POST',
-          headers: {{'Content-Type': 'application/x-www-form-urlencoded'}},
-          body: 'mensaje=' + encodeURIComponent(msg)
-        }});
-        if (res.ok) {{ txt.value = ''; txt.style.height = 'auto'; location.reload(); }}
+        if (archivo) {{
+          const fd = new FormData();
+          fd.append('archivo', archivo);
+          await fetch('/admin/send-media/{tel_esc}', {{ method: 'POST', body: fd }});
+          limpiarArchivo();
+        }}
+        if (msg) {{
+          await fetch('/admin/send/{tel_esc}', {{
+            method: 'POST',
+            headers: {{'Content-Type': 'application/x-www-form-urlencoded'}},
+            body: 'mensaje=' + encodeURIComponent(msg)
+          }});
+          txt.value = '';
+          txt.style.height = 'auto';
+        }}
+        location.reload();
       }} finally {{
         btn.disabled = false;
         document.getElementById('sending').style.display = 'none';
       }}
     }}
 
-    const txt = document.getElementById('txt');
     function intentarRefresh() {{
-      if (document.activeElement !== txt && !txt.value.trim()) {{
+      const archivo = document.getElementById('fileInput').files[0];
+      if (document.activeElement !== txt && !txt.value.trim() && !archivo) {{
         location.reload();
       }} else {{
         setTimeout(intentarRefresh, 4000);
@@ -358,6 +457,26 @@ async def admin_send(telefono: str, request: Request, mensaje: str = Form(...)):
         await proveedor.enviar_mensaje(telefono, mensaje.strip())
     await guardar_mensaje(telefono, "assistant", mensaje.strip())
     return {"status": "ok"}
+
+
+@router.post("/send-media/{telefono}")
+async def admin_send_media(telefono: str, request: Request, archivo: UploadFile = File(...)):
+    if not _autenticado(request):
+        return {"error": "No autorizado"}
+    file_bytes = await archivo.read()
+    mime_type = archivo.content_type or "application/octet-stream"
+    filename = archivo.filename or "archivo"
+    tipo = _tipo_media(mime_type)
+
+    media_id = await _subir_media_meta(file_bytes, mime_type, filename)
+    if not media_id:
+        return {"error": "No se pudo subir el archivo a Meta"}
+
+    ok = await _enviar_media_id_meta(telefono, media_id, tipo, filename)
+    if ok:
+        await guardar_mensaje(telefono, "assistant", f"[Asesor envió {tipo}: {filename}]")
+        return {"status": "ok"}
+    return {"error": "No se pudo enviar el archivo"}
 
 
 @router.post("/close/{telefono}")
