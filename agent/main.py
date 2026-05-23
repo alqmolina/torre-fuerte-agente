@@ -101,7 +101,7 @@ async def _tarea_handoff_inactivos() -> None:
                 temperatura = lead.get("temperatura", "")
                 idioma = await obtener_idioma(telefono) or "es"
 
-                await activar_handoff(telefono, "inactividad 20 minutos")
+                await activar_handoff(telefono, "inactividad 20 minutos", nombre)
 
                 if idioma == "en":
                     msg_lead = (
@@ -352,7 +352,7 @@ async def webhook_handler(request: Request):
                 hab_h = (perfil_h or lead_data or {}).get("habitaciones", "")
                 email_h = (perfil_h or lead_data or {}).get("email", "")
 
-                await activar_handoff(msg.telefono, razon_handoff)
+                await activar_handoff(msg.telefono, razon_handoff, nombre_h)
                 await registrar_aviso_handoff(msg.telefono)
                 await _notificar_handoff(
                     msg.telefono, nombre_h, temperatura_h, razon_handoff,

@@ -19,7 +19,10 @@ from agent.memory import (
     guardar_mensaje,
     desactivar_handoff,
     limpiar_historial,
+    Handoff,
+    async_session,
 )
+from sqlalchemy import select as sa_select
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 proveedor = None  # inyectado desde main.py en lifespan
@@ -286,7 +289,16 @@ async def admin_chat(telefono: str, request: Request):
 
     historial = await obtener_historial(telefono, limite=100)
     perfil = await obtener_perfil_lead(telefono)
-    nombre = _esc(perfil["nombre"]) if perfil and perfil.get("nombre") else ""
+    nombre_raw = perfil.get("nombre") if perfil else None
+
+    if not nombre_raw:
+        async with async_session() as _s:
+            _r = await _s.execute(sa_select(Handoff).where(Handoff.telefono == telefono))
+            _h = _r.scalar_one_or_none()
+            if _h and _h.nombre:
+                nombre_raw = _h.nombre
+
+    nombre = _esc(nombre_raw) if nombre_raw else ""
 
     mensajes_html = ""
     for msg in historial:

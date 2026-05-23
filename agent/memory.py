@@ -64,6 +64,7 @@ class Handoff(Base):
     telefono: Mapped[str] = mapped_column(String(50), primary_key=True)
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
     razon: Mapped[str] = mapped_column(String(200), default="")
+    nombre: Mapped[str | None] = mapped_column(String(200), nullable=True, default=None)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     ultimo_aviso: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
 
@@ -202,7 +203,7 @@ def _norm_tel(telefono: str) -> str:
     return telefono.lstrip("+")
 
 
-async def activar_handoff(telefono: str, razon: str = "") -> None:
+async def activar_handoff(telefono: str, razon: str = "", nombre: str = "") -> None:
     """Activa o actualiza una transferencia a asesor humano."""
     telefono = _norm_tel(telefono)
     async with async_session() as session:
@@ -211,9 +212,11 @@ async def activar_handoff(telefono: str, razon: str = "") -> None:
         if h:
             h.activo = True
             h.razon = razon
+            if nombre:
+                h.nombre = nombre
             h.timestamp = datetime.utcnow()
         else:
-            session.add(Handoff(telefono=telefono, activo=True, razon=razon, timestamp=datetime.utcnow()))
+            session.add(Handoff(telefono=telefono, activo=True, razon=razon, nombre=nombre or None, timestamp=datetime.utcnow()))
         await session.commit()
 
 
@@ -287,7 +290,7 @@ async def obtener_handoffs_activos() -> list[dict]:
                 "telefono": h.telefono,
                 "razon": h.razon,
                 "timestamp": h.timestamp.strftime("%Y-%m-%d %H:%M"),
-                "nombre": lead.nombre if lead else "Desconocido",
+                "nombre": (lead.nombre if lead and lead.nombre else None) or h.nombre or "Desconocido",
                 "temperatura": lead.temperatura if lead else "",
                 "apto": lead.apto if lead else "",
                 "ultimo_mensaje": last_msg.content[:80] if last_msg else "",
