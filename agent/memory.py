@@ -231,6 +231,32 @@ async def guardar_lead(telefono: str, nombre: str, email: str = "", apto: str = 
         await session.commit()
 
 
+async def actualizar_lead(
+    telefono: str,
+    nombre: str | None = None,
+    temperatura: str | None = None,
+    intencion: str | None = None,
+    apto: str | None = None,
+    habitaciones: str | None = None,
+) -> None:
+    async with async_session() as session:
+        result = await session.execute(select(Lead).where(Lead.telefono == telefono))
+        lead = result.scalar_one_or_none()
+        if not lead:
+            return
+        if nombre is not None:
+            lead.nombre = nombre
+        if temperatura is not None:
+            lead.temperatura = temperatura
+        if intencion is not None:
+            lead.intencion = intencion
+        if apto is not None:
+            lead.apto = apto
+        if habitaciones is not None:
+            lead.habitaciones = habitaciones
+        await session.commit()
+
+
 async def obtener_todos_los_leads() -> list[dict]:
     async with async_session() as session:
         result = await session.execute(select(Lead).order_by(Lead.fecha.desc()))

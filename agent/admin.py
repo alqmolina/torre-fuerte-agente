@@ -30,6 +30,7 @@ from agent.memory import (
     obtener_historial_broadcasts,
     guardar_nota,
     obtener_notas,
+    actualizar_lead,
     Handoff,
     async_session,
 )
@@ -423,6 +424,11 @@ async def admin_chat(telefono: str, request: Request):
       </div>
       <div style="font-size:12px;opacity:0.7">{subtitulo_extra}Respondiendo como Torre Fuerte</div>
     </div>
+    <a href="/admin/lead/{tel_esc}/editar"
+       style="background:rgba(255,255,255,0.15);color:white;border:1px solid rgba(255,255,255,0.3);
+              padding:6px 12px;border-radius:20px;font-size:12px;text-decoration:none;white-space:nowrap">
+      ✏️ Editar
+    </a>
     <form method="post" action="/admin/close/{tel_esc}" style="margin:0">
       <button type="submit" class="close-btn"
               onclick="return confirm('¿Cerrar handoff y devolver al bot?')">
@@ -1037,6 +1043,146 @@ async def broadcast_historial(request: Request):
   </script>
 </body>
 </html>"""
+
+
+@router.get("/lead/{telefono}/editar", response_class=HTMLResponse)
+async def lead_editar_form(telefono: str, request: Request):
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
+
+    perfil = await obtener_perfil_lead(telefono)
+    if not perfil:
+        return RedirectResponse(f"/admin/chat/{telefono}", status_code=302)
+
+    tel_esc = _esc(telefono)
+    nombre_v = _esc(perfil.get("nombre") or "")
+    apto_v = _esc(perfil.get("apto") or "")
+    hab_v = _esc(perfil.get("habitaciones") or "")
+    temp_v = perfil.get("temperatura") or ""
+    int_v = perfil.get("intencion") or ""
+
+    def sel_temp(val):
+        return 'selected' if temp_v == val else ''
+
+    def sel_int(val):
+        return 'selected' if int_v in (val, val.replace("ó", "o")) else ''
+
+    return f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Editar Lead</title>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; }}
+    .header {{ background: #1a3c5e; color: white; padding: 16px 20px; display: flex; align-items: center; gap: 12px; }}
+    .container {{ max-width: 520px; margin: 0 auto; padding: 20px 16px; }}
+    .card {{ background: white; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 14px; }}
+    label {{ display: block; font-size: 13px; font-weight: 600; color: #555; margin-bottom: 6px; }}
+    input[type=text], select {{ width: 100%; border: 1px solid #ddd; border-radius: 8px;
+                                padding: 10px 12px; font-size: 15px; outline: none; font-family: inherit; }}
+    input[type=text]:focus, select:focus {{ border-color: #1a3c5e; }}
+    .field {{ margin-bottom: 16px; }}
+    .temp-btns {{ display: flex; gap: 8px; }}
+    .temp-btn {{ flex: 1; padding: 10px; border: 2px solid #ddd; border-radius: 8px; background: white;
+                 font-size: 14px; font-weight: 600; cursor: pointer; text-align: center; transition: all 0.15s; }}
+    .temp-btn.active-caliente {{ border-color: #e74c3c; background: #fde8e8; color: #c0392b; }}
+    .temp-btn.active-tibio {{ border-color: #f39c12; background: #fef3cd; color: #d68910; }}
+    .temp-btn.active-frio {{ border-color: #3498db; background: #dbeafe; color: #1a56db; }}
+    .btn-save {{ width: 100%; background: #1a3c5e; color: white; border: none; border-radius: 8px;
+                 padding: 14px; font-size: 16px; font-weight: 600; cursor: pointer; }}
+    .btn-save:hover {{ background: #15304e; }}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/admin/chat/{tel_esc}" style="color:white;text-decoration:none;font-size:20px">←</a>
+    <div>
+      <div style="font-size:17px;font-weight:600">Editar Lead</div>
+      <div style="font-size:12px;opacity:0.7">📱 {tel_esc}</div>
+    </div>
+  </div>
+
+  <div class="container">
+    <form method="post" action="/admin/lead/{tel_esc}/editar">
+      <div class="card">
+        <div class="field">
+          <label>Nombre</label>
+          <input type="text" name="nombre" value="{nombre_v}" placeholder="Nombre del lead">
+        </div>
+        <div class="field">
+          <label>Temperatura</label>
+          <div class="temp-btns" id="temp-btns">
+            <button type="button" class="temp-btn {'active-caliente' if temp_v == 'caliente' else ''}"
+                    onclick="setTemp('caliente', this)">🔥 Caliente</button>
+            <button type="button" class="temp-btn {'active-tibio' if temp_v in ('tibio',) else ''}"
+                    onclick="setTemp('tibio', this)">🌡️ Tibio</button>
+            <button type="button" class="temp-btn {'active-frio' if temp_v in ('frío','frio') else ''}"
+                    onclick="setTemp('frio', this)">❄️ Frío</button>
+          </div>
+          <input type="hidden" name="temperatura" id="temp-val" value="{temp_v}">
+        </div>
+        <div class="field">
+          <label>Intención</label>
+          <select name="intencion">
+            <option value="" {'selected' if not int_v else ''}>Sin especificar</option>
+            <option value="vivir" {sel_int('vivir')}>🏠 Vivir</option>
+            <option value="inversión" {sel_int('inversión')}>💼 Inversión</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Apartamento de interés</label>
+          <input type="text" name="apto" value="{apto_v}" placeholder="Ej: D-401, Penthouse 02...">
+        </div>
+        <div class="field" style="margin-bottom:0">
+          <label>Habitaciones</label>
+          <select name="habitaciones">
+            <option value="" {'selected' if not hab_v else ''}>Sin especificar</option>
+            <option value="1" {'selected' if hab_v=='1' else ''}>1 habitación</option>
+            <option value="2" {'selected' if hab_v=='2' else ''}>2 habitaciones</option>
+            <option value="3" {'selected' if hab_v=='3' else ''}>3 habitaciones</option>
+            <option value="4" {'selected' if hab_v=='4' else ''}>4+ habitaciones</option>
+          </select>
+        </div>
+      </div>
+      <button type="submit" class="btn-save">Guardar cambios</button>
+    </form>
+  </div>
+
+  <script>
+    function setTemp(val, btn) {{
+      document.getElementById('temp-val').value = val;
+      document.querySelectorAll('.temp-btn').forEach(b => b.className = 'temp-btn');
+      const cls = val === 'caliente' ? 'active-caliente' : val === 'tibio' ? 'active-tibio' : 'active-frio';
+      btn.className = 'temp-btn ' + cls;
+    }}
+  </script>
+</body>
+</html>"""
+
+
+@router.post("/lead/{telefono}/editar")
+async def lead_editar_save(
+    telefono: str,
+    request: Request,
+    nombre: str = Form(default=""),
+    temperatura: str = Form(default=""),
+    intencion: str = Form(default=""),
+    apto: str = Form(default=""),
+    habitaciones: str = Form(default=""),
+):
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
+    await actualizar_lead(
+        telefono,
+        nombre=nombre.strip() or None,
+        temperatura=temperatura.strip() or None,
+        intencion=intencion.strip() or None,
+        apto=apto.strip() if apto.strip() != "" else "",
+        habitaciones=habitaciones.strip() if habitaciones.strip() != "" else "",
+    )
+    return RedirectResponse(f"/admin/chat/{telefono}", status_code=303)
 
 
 @router.post("/nota/{telefono}")
