@@ -1,10 +1,12 @@
 # agent/admin.py — Panel de admin para atención humana en handoff
 
 import os
+import hmac
+import hashlib
 import secrets
-from fastapi import APIRouter, Depends, Form, HTTPException
+import time
+from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from agent.memory import (
     obtener_historial,
@@ -14,11 +16,11 @@ from agent.memory import (
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
-security = HTTPBasic()
 proveedor = None  # inyectado desde main.py en lifespan
 
 ADMIN_USER = os.getenv("ADMIN_USER", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "torrefuerte2024")
+_SECRET = os.getenv("ADMIN_PASSWORD", "torrefuerte2024")
 
 _ICONOS = {"caliente": "🔥", "tibio": "🌡️", "frío": "❄️", "frio": "❄️"}
 
@@ -31,20 +33,111 @@ def _esc(text: str) -> str:
         .replace('"', "&quot;"))
 
 
-def _auth(credentials: HTTPBasicCredentials = Depends(security)):
-    user_ok = secrets.compare_digest(credentials.username.encode(), ADMIN_USER.encode())
-    pass_ok = secrets.compare_digest(credentials.password.encode(), ADMIN_PASSWORD.encode())
-    if not (user_ok and pass_ok):
-        raise HTTPException(
-            status_code=401,
-            detail="Credenciales incorrectas",
-            headers={"WWW-Authenticate": "Basic"},
-        )
+def _make_token() -> str:
+    ts = str(int(time.time()))
+    sig = hmac.new(_SECRET.encode(), ts.encode(), hashlib.sha256).hexdigest()
+    return f"{ts}.{sig}"
 
+
+def _valid_token(token: str) -> bool:
+    try:
+        ts, sig = token.split(".", 1)
+        expected = hmac.new(_SECRET.encode(), ts.encode(), hashlib.sha256).hexdigest()
+        if not secrets.compare_digest(sig, expected):
+            return False
+        return (int(time.time()) - int(ts)) < 86400  # válido 24 horas
+    except Exception:
+        return False
+
+
+def _autenticado(request: Request) -> bool:
+    return _valid_token(request.cookies.get("tf_admin", ""))
+
+
+# ── Login ────────────────────────────────────────────────────────────────────
+
+@router.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request, error: str = ""):
+    if _autenticado(request):
+        return RedirectResponse("/admin", status_code=302)
+    error_html = '<p style="color:#e74c3c;font-size:14px;margin-top:8px">Usuario o contraseña incorrectos</p>' if error else ""
+    return f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Torre Fuerte — Acceso Asesor</title>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f0f4f8; min-height: 100vh;
+            display: flex; align-items: center; justify-content: center; }}
+    .card {{ background: white; border-radius: 16px; padding: 36px 32px;
+             box-shadow: 0 4px 20px rgba(0,0,0,0.1); width: 100%; max-width: 360px; }}
+    .logo {{ text-align: center; margin-bottom: 28px; }}
+    .logo h1 {{ color: #1a3c5e; font-size: 22px; font-weight: 700; }}
+    .logo p {{ color: #888; font-size: 13px; margin-top: 4px; }}
+    label {{ display: block; font-size: 13px; font-weight: 600; color: #555; margin-bottom: 6px; }}
+    input {{ width: 100%; border: 1px solid #ddd; border-radius: 8px; padding: 11px 14px;
+             font-size: 15px; outline: none; transition: border 0.2s; }}
+    input:focus {{ border-color: #1a3c5e; }}
+    .field {{ margin-bottom: 18px; }}
+    button {{ width: 100%; background: #1a3c5e; color: white; border: none;
+              border-radius: 8px; padding: 13px; font-size: 15px; font-weight: 600;
+              cursor: pointer; margin-top: 4px; }}
+    button:hover {{ background: #15304e; }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <h1>Torre Fuerte</h1>
+      <p>Panel de Asesor</p>
+    </div>
+    <form method="post" action="/admin/login">
+      <div class="field">
+        <label>Usuario</label>
+        <input type="text" name="usuario" autofocus autocomplete="username">
+      </div>
+      <div class="field">
+        <label>Contraseña</label>
+        <input type="password" name="password" autocomplete="current-password">
+      </div>
+      {error_html}
+      <button type="submit">Entrar</button>
+    </form>
+  </div>
+</body>
+</html>"""
+
+
+@router.post("/login")
+async def login_submit(usuario: str = Form(...), password: str = Form(...)):
+    u_ok = secrets.compare_digest(usuario.strip().encode(), ADMIN_USER.encode())
+    p_ok = secrets.compare_digest(password.strip().encode(), ADMIN_PASSWORD.encode())
+    if u_ok and p_ok:
+        token = _make_token()
+        resp = RedirectResponse("/admin", status_code=303)
+        resp.set_cookie("tf_admin", token, httponly=True, max_age=86400, samesite="lax")
+        return resp
+    return RedirectResponse("/admin/login?error=1", status_code=303)
+
+
+@router.get("/logout")
+async def logout():
+    resp = RedirectResponse("/admin/login", status_code=302)
+    resp.delete_cookie("tf_admin")
+    return resp
+
+
+# ── Lista de handoffs ─────────────────────────────────────────────────────────
 
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
-async def admin_index(_: None = Depends(_auth)):
+async def admin_index(request: Request):
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
+
     handoffs = await obtener_handoffs_activos()
 
     if not handoffs:
@@ -104,7 +197,6 @@ async def admin_index(_: None = Depends(_auth)):
     .badge-caliente {{ background: #fde8e8; color: #c0392b; }}
     .badge-tibio {{ background: #fef3cd; color: #d68910; }}
     .badge-frio {{ background: #dbeafe; color: #1a56db; }}
-    .footer {{ text-align: center; font-size: 12px; color: #bbb; margin-top: 20px; }}
   </style>
 </head>
 <body>
@@ -114,18 +206,24 @@ async def admin_index(_: None = Depends(_auth)):
       <div style="font-size:13px;opacity:0.7;margin-top:2px">Conversaciones en transferencia</div>
     </div>
     {badge}
+    <a href="/admin/logout" style="color:rgba(255,255,255,0.6);font-size:12px;text-decoration:none">Salir</a>
   </div>
   <div class="container">
     {content}
-    <p class="footer">Actualiza automáticamente cada 15 segundos</p>
+    <p style="text-align:center;font-size:12px;color:#bbb;margin-top:20px">Actualiza cada 15 segundos</p>
   </div>
   <script>setTimeout(() => location.reload(), 15000);</script>
 </body>
 </html>"""
 
 
+# ── Chat con un lead ──────────────────────────────────────────────────────────
+
 @router.get("/chat/{telefono}", response_class=HTMLResponse)
-async def admin_chat(telefono: str, _: None = Depends(_auth)):
+async def admin_chat(telefono: str, request: Request):
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
+
     historial = await obtener_historial(telefono, limite=100)
 
     mensajes_html = ""
@@ -137,7 +235,7 @@ async def admin_chat(telefono: str, _: None = Depends(_auth)):
         align = "flex-end" if es_bot else "flex-start"
         bg = "#1a3c5e" if es_bot else "#ffffff"
         color = "#ffffff" if es_bot else "#222222"
-        label = "Bot" if es_bot else "Lead"
+        label = "Bot / Asesor" if es_bot else "Lead"
         contenido_esc = _esc(contenido).replace("\n", "<br>")
         mensajes_html += f"""
         <div style="display:flex;justify-content:{align};margin-bottom:10px;padding:0 4px">
@@ -178,9 +276,9 @@ async def admin_chat(telefono: str, _: None = Depends(_auth)):
                  width: 44px; height: 44px; font-size: 18px; cursor: pointer;
                  flex-shrink: 0; display: flex; align-items: center; justify-content: center; }}
     .send-btn:disabled {{ opacity: 0.4; cursor: not-allowed; }}
-    .close-btn {{ background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.3);
-                  padding: 6px 14px; border-radius: 20px; font-size: 12px; cursor: pointer;
-                  white-space: nowrap; }}
+    .close-btn {{ background: rgba(255,255,255,0.15); color: white;
+                  border: 1px solid rgba(255,255,255,0.3); padding: 6px 14px;
+                  border-radius: 20px; font-size: 12px; cursor: pointer; white-space: nowrap; }}
     .close-btn:hover {{ background: rgba(231,76,60,0.8); border-color: transparent; }}
     #sending {{ display:none; position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
                 background:#333; color:white; padding:6px 16px; border-radius:20px; font-size:13px; }}
@@ -220,28 +318,21 @@ async def admin_chat(telefono: str, _: None = Depends(_auth)):
       const btn = document.getElementById('sendBtn');
       const msg = txt.value.trim();
       if (!msg) return;
-
       btn.disabled = true;
       document.getElementById('sending').style.display = 'block';
-
       try {{
         const res = await fetch('/admin/send/{tel_esc}', {{
           method: 'POST',
           headers: {{'Content-Type': 'application/x-www-form-urlencoded'}},
           body: 'mensaje=' + encodeURIComponent(msg)
         }});
-        if (res.ok) {{
-          txt.value = '';
-          txt.style.height = 'auto';
-          location.reload();
-        }}
+        if (res.ok) {{ txt.value = ''; txt.style.height = 'auto'; location.reload(); }}
       }} finally {{
         btn.disabled = false;
         document.getElementById('sending').style.display = 'none';
       }}
     }}
 
-    // Auto-refresh solo si el asesor no está escribiendo
     const txt = document.getElementById('txt');
     function intentarRefresh() {{
       if (document.activeElement !== txt && !txt.value.trim()) {{
@@ -257,9 +348,11 @@ async def admin_chat(telefono: str, _: None = Depends(_auth)):
 
 
 @router.post("/send/{telefono}")
-async def admin_send(telefono: str, mensaje: str = Form(...), _: None = Depends(_auth)):
+async def admin_send(telefono: str, request: Request, mensaje: str = Form(...)):
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
     if not mensaje.strip():
-        raise HTTPException(status_code=400, detail="Mensaje vacío")
+        return {"error": "Mensaje vacío"}
     if proveedor:
         await proveedor.enviar_mensaje(telefono, mensaje.strip())
     await guardar_mensaje(telefono, "assistant", mensaje.strip())
@@ -267,6 +360,8 @@ async def admin_send(telefono: str, mensaje: str = Form(...), _: None = Depends(
 
 
 @router.post("/close/{telefono}")
-async def admin_close(telefono: str, _: None = Depends(_auth)):
+async def admin_close(telefono: str, request: Request):
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
     await desactivar_handoff(telefono)
-    return RedirectResponse(url="/admin", status_code=303)
+    return RedirectResponse("/admin", status_code=303)
