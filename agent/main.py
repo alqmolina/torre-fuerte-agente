@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from agent.brain import generar_respuesta
+from agent.brain import generar_respuesta, generar_resumen_handoff
 from agent.memory import (
     inicializar_db, guardar_mensaje, obtener_historial,
     guardar_lead, lead_existe, obtener_perfil_lead,
@@ -20,6 +20,8 @@ from agent.memory import (
     activar_handoff, desactivar_handoff, esta_en_handoff,
     debe_enviar_aviso_handoff, registrar_aviso_handoff,
     obtener_leads_pendientes_handoff,
+    mensaje_ya_procesado, marcar_mensaje_procesado,
+    obtener_leads_para_seguimiento, registrar_seguimiento,
 )
 import agent.admin as admin_module
 from agent.tools import (
@@ -67,9 +69,9 @@ def _detectar_idioma(texto: str) -> str:
 proveedor = None
 
 
-async def _notificar_handoff(telefono: str, nombre: str, temperatura: str, razon: str, idioma: str, apto: str = "", habitaciones: str = "", email_lead: str = "", intencion: str = "") -> None:
+async def _notificar_handoff(telefono: str, nombre: str, temperatura: str, razon: str, idioma: str, apto: str = "", habitaciones: str = "", email_lead: str = "", intencion: str = "", resumen: str = "") -> None:
     """Envía notificación de handoff al asesor por email y WhatsApp (si está configurado)."""
-    enviar_email_handoff(telefono, nombre, temperatura, razon, apto, habitaciones, email_lead, intencion)
+    enviar_email_handoff(telefono, nombre, temperatura, razon, apto, habitaciones, email_lead, intencion, resumen)
 
     if ASESOR_WHATSAPP and proveedor:
         from agent.tools import ICONOS_TEMPERATURA
@@ -90,6 +92,69 @@ async def _notificar_handoff(telefono: str, nombre: str, temperatura: str, razon
             logger.warning(f"No se pudo enviar WhatsApp al asesor: {e}")
 
 
+def _mensaje_seguimiento(nombre: str, temperatura: str, numero: int, idioma: str) -> str:
+    """Compone el mensaje de seguimiento según temperatura, número y idioma."""
+    temp = temperatura.lower().replace("í", "i")
+    n = nombre if nombre and nombre != "Desconocido" else ""
+    s_es = f"¡Hola{' ' + n if n else ''}!"
+    s_en = f"Hi{' ' + n if n else ''}!"
+
+    msgs: dict = {
+        "es": {
+            "caliente": {
+                1: f"{s_es} 👋 Solo quería hacer seguimiento a tu consulta sobre Torre Fuerte Apartamentos. ¿Pudiste revisar la información que te compartí? Estoy aquí para resolver cualquier duda 🏠✨",
+                2: f"{s_es} 😊 Los apartamentos en Torre Fuerte tienen disponibilidad limitada. ¿Te gustaría agendar una visita al proyecto o hablar con uno de nuestros asesores?",
+            },
+            "tibio": {
+                1: f"{s_es} 👋 Quería recordarte que en Torre Fuerte Apartamentos seguimos disponibles para ayudarte. ¿Tienes alguna pregunta pendiente sobre el proyecto? 🏠",
+                2: f"{s_es} 😊 Este es nuestro último mensaje de seguimiento. Si decides retomar tu búsqueda de apartamento en Laureles, estaremos encantados de ayudarte. ¡Que tengas un excelente día!",
+            },
+            "frio": {
+                1: f"{s_es} 👋 Vimos que estuviste conociendo Torre Fuerte Apartamentos en Laureles, Medellín. Si tienes alguna pregunta o quieres más información, con gusto te ayudamos 🏠",
+                2: f"{s_es} 😊 Este es nuestro último mensaje. Si en algún momento retomas tu búsqueda de apartamento en Medellín, Torre Fuerte tiene opciones únicas en el corazón de Laureles. ¡Mucho éxito!",
+            },
+        },
+        "en": {
+            "caliente": {
+                1: f"{s_en} 👋 Just following up on your inquiry about Torre Fuerte Apartments. Did you get a chance to review the information I shared? I'm here to answer any questions 🏠✨",
+                2: f"{s_en} 😊 Our apartments have limited availability. Would you like to schedule a visit to the project or speak with one of our advisors?",
+            },
+            "tibio": {
+                1: f"{s_en} 👋 Just a reminder that we're here to help at Torre Fuerte Apartments. Do you have any pending questions about the project or available units? 🏠",
+                2: f"{s_en} 😊 This is our last follow-up message. If you ever decide to resume your apartment search in Laureles, we'd love to hear from you. Have a great day!",
+            },
+            "frio": {
+                1: f"{s_en} 👋 We noticed you were exploring Torre Fuerte Apartments in Laureles, Medellín. If you have any questions or would like more information, we're happy to help 🏠",
+                2: f"{s_en} 😊 This is our last message. If you ever resume your apartment search in Medellín, Torre Fuerte has unique options in the heart of Laureles. Best of luck!",
+            },
+        },
+    }
+    lang_msgs = msgs.get("en" if idioma == "en" else "es", msgs["es"])
+    temp_msgs = lang_msgs.get(temp, lang_msgs.get("frio", {}))
+    return temp_msgs.get(numero, f"{s_es} 👋 Solo quería hacer seguimiento a tu consulta sobre Torre Fuerte. ¡Seguimos disponibles para ayudarte! 🏠")
+
+
+async def _tarea_seguimiento_leads() -> None:
+    """Tarea background: envía mensajes de seguimiento a leads inactivos según su temperatura."""
+    await asyncio.sleep(150)  # esperar arranque completo
+    while True:
+        try:
+            leads = await obtener_leads_para_seguimiento()
+            for item in leads:
+                telefono = item["telefono"]
+                msg = _mensaje_seguimiento(
+                    item["nombre"], item["temperatura"], item["numero"], item.get("idioma", "es")
+                )
+                if proveedor:
+                    await proveedor.enviar_mensaje(telefono, msg)
+                await guardar_mensaje(telefono, "assistant", msg)
+                await registrar_seguimiento(telefono, item["numero"])
+                logger.info(f"Seguimiento #{item['numero']} enviado a {item['nombre']} ({telefono})")
+        except Exception as e:
+            logger.error(f"Error en tarea seguimiento: {e}")
+        await asyncio.sleep(1800)  # revisar cada 30 minutos
+
+
 async def _tarea_handoff_inactivos() -> None:
     """Tarea background: revisa cada 2 minutos si hay leads tibio/caliente inactivos 20+ min."""
     await asyncio.sleep(90)  # esperar que el servidor arranque completamente
@@ -102,7 +167,9 @@ async def _tarea_handoff_inactivos() -> None:
                 temperatura = lead.get("temperatura", "")
                 idioma = await obtener_idioma(telefono) or "es"
 
-                await activar_handoff(telefono, "inactividad 20 minutos", nombre)
+                historial_in = await obtener_historial(telefono, limite=30)
+                resumen_in = await generar_resumen_handoff(historial_in, nombre, temperatura, idioma)
+                await activar_handoff(telefono, "inactividad 20 minutos", nombre, resumen_in)
 
                 if idioma == "en":
                     msg_lead = (
@@ -122,7 +189,7 @@ async def _tarea_handoff_inactivos() -> None:
                 await _notificar_handoff(
                     telefono, nombre, temperatura, "inactividad 20 minutos", idioma,
                     lead.get("apto", ""), lead.get("habitaciones", ""), lead.get("email", ""),
-                    lead.get("intencion", ""),
+                    lead.get("intencion", ""), resumen_in,
                 )
                 logger.info(f"Handoff automático por inactividad: {nombre} ({telefono})")
 
@@ -148,6 +215,7 @@ async def lifespan(app: FastAPI):
     admin_module.proveedor = proveedor
 
     asyncio.create_task(_tarea_handoff_inactivos())
+    asyncio.create_task(_tarea_seguimiento_leads())
 
     logger.info("Base de datos inicializada")
     logger.info(f"Servidor corriendo en puerto {PORT}")
@@ -241,6 +309,12 @@ async def webhook_handler(request: Request):
         for msg in mensajes:
             if msg.es_propio or not msg.texto:
                 continue
+
+            # Deduplicación: ignorar si ya procesamos este mensaje_id
+            if await mensaje_ya_procesado(msg.mensaje_id):
+                logger.info(f"Mensaje duplicado ignorado: {msg.mensaje_id}")
+                continue
+            await marcar_mensaje_procesado(msg.mensaje_id)
 
             logger.info(f"Mensaje de {msg.telefono}: {msg.texto}")
 
@@ -355,11 +429,14 @@ async def webhook_handler(request: Request):
                 email_h = (perfil_h or lead_data or {}).get("email", "")
                 intencion_h = (perfil_h or lead_data or {}).get("intencion", "")
 
-                await activar_handoff(msg.telefono, razon_handoff, nombre_h)
+                historial_h = await obtener_historial(msg.telefono, limite=30)
+                resumen_h = await generar_resumen_handoff(historial_h, nombre_h, temperatura_h, idioma)
+
+                await activar_handoff(msg.telefono, razon_handoff, nombre_h, resumen_h)
                 await registrar_aviso_handoff(msg.telefono)
                 await _notificar_handoff(
                     msg.telefono, nombre_h, temperatura_h, razon_handoff,
-                    idioma, apto_h, hab_h, email_h, intencion_h,
+                    idioma, apto_h, hab_h, email_h, intencion_h, resumen_h,
                 )
                 logger.info(f"Handoff activado para {msg.telefono} — razón: {razon_handoff}")
 

@@ -224,6 +224,7 @@ def enviar_email_handoff(
     habitaciones: str = "",
     email: str = "",
     intencion: str = "",
+    resumen: str = "",
 ) -> bool:
     """Notifica al asesor por email que debe tomar esta conversación en Meta Business Suite."""
     if not all([RESEND_API_KEY, EMAIL_LEADS]):
@@ -260,6 +261,10 @@ def enviar_email_handoff(
       <tr><td style="padding:8px 0;color:#666">🕐 Hora</td>
           <td style="padding:8px 0">{_ahora_colombia()}</td></tr>
     </table>
+    {f'''<div style="margin-top:20px;background:#fff8e1;border-left:4px solid #f39c12;padding:14px 16px;border-radius:4px">
+      <div style="font-size:12px;font-weight:bold;color:#d68910;margin-bottom:8px">📋 RESUMEN DE LA CONVERSACIÓN</div>
+      <div style="font-size:14px;color:#555;white-space:pre-line">{resumen}</div>
+    </div>''' if resumen else ''}
     <div style="margin-top:24px;text-align:center">
       <a href="https://business.facebook.com/latest/inbox/all"
          style="display:inline-block;background:#1a3c5e;color:#fff;padding:12px 28px;
@@ -283,8 +288,9 @@ def enviar_email_handoff(
             f"Intención:    {intencion.capitalize() if intencion else 'No especificada'}\n"
             f"Temperatura:  {temp_texto}\n"
             f"Razón:        {razon}\n"
-            f"Hora:         {_ahora_colombia()}\n\n"
-            f"Abre Meta Business Suite y busca +{tel_limpio}:\n"
+            f"Hora:         {_ahora_colombia()}\n"
+            + (f"\nResumen:\n{resumen}\n" if resumen else "")
+            + f"\nAbre Meta Business Suite y busca +{tel_limpio}:\n"
             f"https://business.facebook.com/latest/inbox/all\n"
         )
         r = httpx.post(

@@ -39,6 +39,40 @@ def obtener_mensaje_fallback() -> str:
     return config.get("fallback_message", "Disculpa, no entendí tu mensaje. ¿Podrías reformularlo?")
 
 
+async def generar_resumen_handoff(historial: list[dict], nombre: str, temperatura: str, idioma: str) -> str:
+    """Genera un resumen de 3 puntos de la conversación para que el asesor entre contextualizado."""
+    if not historial:
+        return ""
+    msgs = [
+        f"{'Cliente' if m['role'] == 'user' else 'Bot'}: {m['content'][:300]}"
+        for m in historial[-20:]
+        if not m["content"].startswith("[Sistema:")
+    ]
+    if not msgs:
+        return ""
+    conversacion = "\n".join(msgs)
+    lang = "inglés" if idioma == "en" else "español"
+    prompt = (
+        f"Eres un asistente de ventas inmobiliarias. Resume en exactamente 3 puntos concisos "
+        f"(una línea cada uno, sin títulos) esta conversación de WhatsApp para el asesor humano:\n\n"
+        f"Lead: {nombre} | Temperatura: {temperatura}\n\n{conversacion}\n\n"
+        f"Responde en {lang}. Formato:\n"
+        f"• [Qué busca: tipo/apto/habitaciones]\n"
+        f"• [Intención: vivir o invertir, urgencia]\n"
+        f"• [Estado: dónde quedó, qué falta o por qué pidió asesor]"
+    )
+    try:
+        response = await client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=200,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return response.content[0].text.strip()
+    except Exception as e:
+        logger.error(f"Error generando resumen handoff: {e}")
+        return ""
+
+
 async def generar_respuesta(mensaje: str, historial: list[dict], perfil: dict | None = None, idioma: str | None = None) -> str:
     """
     Genera una respuesta usando Claude API.

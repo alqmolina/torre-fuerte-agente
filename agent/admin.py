@@ -300,9 +300,20 @@ async def admin_chat(telefono: str, request: Request):
             if _h and _h.nombre:
                 nombre_raw = _h.nombre
 
+    # Obtener resumen del handoff
+    resumen_raw = ""
+    async with async_session() as _s2:
+        _r2 = await _s2.execute(sa_select(Handoff).where(Handoff.telefono == telefono))
+        _h2 = _r2.scalar_one_or_none()
+        if _h2:
+            resumen_raw = _h2.resumen or ""
+            if not nombre_raw and _h2.nombre:
+                nombre_raw = _h2.nombre
+
     nombre = _esc(nombre_raw) if nombre_raw else "Desconocido"
     apto = _esc(apto_raw) if apto_raw else ""
     intencion = _esc(intencion_raw.capitalize()) if intencion_raw else ""
+    resumen_html = _esc(resumen_raw).replace("\n", "<br>") if resumen_raw else ""
 
     partes_info = []
     if apto:
@@ -400,6 +411,10 @@ async def admin_chat(telefono: str, request: Request):
       </button>
     </form>
   </div>
+  {f'''<div style="background:#fff8e1;border-bottom:1px solid #f0d96a;padding:10px 16px;flex-shrink:0">
+    <div style="font-size:11px;font-weight:700;color:#b7860b;margin-bottom:4px;letter-spacing:0.5px">📋 RESUMEN DE LA CONVERSACIÓN</div>
+    <div style="font-size:13px;color:#555;line-height:1.5">{resumen_html}</div>
+  </div>''' if resumen_html else ''}
   <div class="messages" id="msgs">
     {mensajes_html}
   </div>
