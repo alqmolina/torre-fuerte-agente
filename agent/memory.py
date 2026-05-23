@@ -158,6 +158,19 @@ async def guardar_lead(telefono: str, nombre: str, email: str = "", apto: str = 
         await session.commit()
 
 
+_COL = timedelta(hours=-5)
+
+
+def _col(dt: datetime) -> str:
+    """Convierte datetime UTC a hora Colombia (UTC-5)."""
+    return (dt + _COL).strftime("%Y-%m-%d %H:%M")
+
+
+def _col_hora(dt: datetime) -> str:
+    """Retorna solo la hora en Colombia."""
+    return (dt + _COL).strftime("%H:%M")
+
+
 async def obtener_todos_los_leads() -> list[dict]:
     """Retorna todos los leads registrados ordenados por fecha descendente."""
     async with async_session() as session:
@@ -165,7 +178,7 @@ async def obtener_todos_los_leads() -> list[dict]:
         leads = result.scalars().all()
         return [
             {
-                "fecha": lead.fecha.strftime("%Y-%m-%d %H:%M"),
+                "fecha": _col(lead.fecha),
                 "nombre": lead.nombre,
                 "telefono": lead.telefono,
                 "email": lead.email,
@@ -289,13 +302,13 @@ async def obtener_handoffs_activos() -> list[dict]:
             resultado.append({
                 "telefono": h.telefono,
                 "razon": h.razon,
-                "timestamp": h.timestamp.strftime("%Y-%m-%d %H:%M"),
+                "timestamp": _col(h.timestamp),
                 "nombre": (lead.nombre if lead and lead.nombre else None) or h.nombre or "Desconocido",
                 "temperatura": lead.temperatura if lead else "",
                 "apto": lead.apto if lead else "",
                 "ultimo_mensaje": last_msg.content[:80] if last_msg else "",
                 "ultimo_mensaje_role": last_msg.role if last_msg else "",
-                "ultimo_mensaje_tiempo": last_msg.timestamp.strftime("%H:%M") if last_msg else "",
+                "ultimo_mensaje_tiempo": _col_hora(last_msg.timestamp) if last_msg else "",
             })
 
         return resultado

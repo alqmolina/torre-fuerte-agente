@@ -298,7 +298,7 @@ async def admin_chat(telefono: str, request: Request):
             if _h and _h.nombre:
                 nombre_raw = _h.nombre
 
-    nombre = _esc(nombre_raw) if nombre_raw else ""
+    nombre = _esc(nombre_raw) if nombre_raw else "Desconocido"
 
     mensajes_html = ""
     for msg in historial:

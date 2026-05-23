@@ -6,12 +6,20 @@ import re
 import yaml
 import logging
 import httpx
-from datetime import datetime
+from datetime import datetime, timedelta
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
 logger = logging.getLogger("agentkit")
+
+_COL = timedelta(hours=-5)
+
+
+def _ahora_colombia() -> str:
+    """Retorna la fecha y hora actual en Colombia (UTC-5)."""
+    return (datetime.utcnow() + _COL).strftime("%Y-%m-%d %H:%M")
+
 
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 EMAIL_LEADS = os.getenv("EMAIL_LEADS", "")
@@ -165,7 +173,7 @@ def enviar_email_lead(telefono: str, nombre: str, email: str = "", apto: str = "
             f"Habitaciones:   {habitaciones or 'No especificado'}\n"
             f"Intención:      {intencion or 'No especificada'}\n"
             f"Temperatura:    {temp_texto}\n"
-            f"Fecha:          {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+            f"Fecha:          {_ahora_colombia()}\n"
         )
         r = httpx.post(
             "https://api.resend.com/emails",
@@ -247,7 +255,7 @@ def enviar_email_handoff(
       <tr><td style="padding:8px 0;color:#666">📋 Razón</td>
           <td style="padding:8px 0">{razon}</td></tr>
       <tr><td style="padding:8px 0;color:#666">🕐 Hora</td>
-          <td style="padding:8px 0">{datetime.now().strftime('%Y-%m-%d %H:%M')}</td></tr>
+          <td style="padding:8px 0">{_ahora_colombia()}</td></tr>
     </table>
     <div style="margin-top:24px;text-align:center">
       <a href="https://business.facebook.com/latest/inbox/all"
@@ -271,7 +279,7 @@ def enviar_email_handoff(
             f"Habitaciones: {habitaciones or 'No especificado'}\n"
             f"Temperatura:  {temp_texto}\n"
             f"Razón:        {razon}\n"
-            f"Hora:         {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n"
+            f"Hora:         {_ahora_colombia()}\n\n"
             f"Abre Meta Business Suite y busca +{tel_limpio}:\n"
             f"https://business.facebook.com/latest/inbox/all\n"
         )

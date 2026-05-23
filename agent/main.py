@@ -346,7 +346,7 @@ async def webhook_handler(request: Request):
             # Handoff: Claude emitió [HANDOFF] → transferir a asesor
             if razon_handoff and not await esta_en_handoff(msg.telefono):
                 perfil_h = await obtener_perfil_lead(msg.telefono)
-                nombre_h = (perfil_h or {}).get("nombre", "")
+                nombre_h = (perfil_h or lead_data or {}).get("nombre", "")
                 temperatura_h = (perfil_h or lead_data or {}).get("temperatura", "tibio")
                 apto_h = (perfil_h or lead_data or {}).get("apto", "")
                 hab_h = (perfil_h or lead_data or {}).get("habitaciones", "")
