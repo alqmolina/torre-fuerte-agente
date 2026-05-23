@@ -105,6 +105,20 @@ class BroadcastLog(Base):
     enviado_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class Visita(Base):
+    """Visita agendada al proyecto."""
+    __tablename__ = "visitas"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    telefono: Mapped[str] = mapped_column(String(50), index=True)
+    nombre: Mapped[str] = mapped_column(String(200), default="")
+    fecha: Mapped[str] = mapped_column(String(20))   # "2024-01-15"
+    hora: Mapped[str] = mapped_column(String(10))    # "10:00"
+    notas: Mapped[str] = mapped_column(Text, default="")
+    estado: Mapped[str] = mapped_column(String(20), default="confirmada")
+    creado_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class NotaLead(Base):
     """Notas internas del asesor sobre un lead."""
     __tablename__ = "notas_lead"
@@ -611,6 +625,55 @@ async def obtener_metricas() -> dict:
             "por_idioma": por_idioma,
             "tasa_conversion": round(total_leads / total_conversaciones * 100, 1) if total_conversaciones else 0,
         }
+
+
+# ── Visitas ───────────────────────────────────────────────────────────────────
+
+async def guardar_visita(telefono: str, nombre: str, fecha: str, hora: str, notas: str = "") -> int:
+    async with async_session() as session:
+        v = Visita(telefono=telefono, nombre=nombre, fecha=fecha, hora=hora,
+                   notas=notas, estado="confirmada", creado_at=datetime.utcnow())
+        session.add(v)
+        await session.commit()
+        await session.refresh(v)
+        return v.id
+
+
+async def obtener_visitas_lead(telefono: str) -> list[dict]:
+    async with async_session() as session:
+        result = await session.execute(
+            select(Visita).where(Visita.telefono == telefono).order_by(Visita.fecha.asc(), Visita.hora.asc())
+        )
+        return [
+            {"id": v.id, "nombre": v.nombre, "fecha": v.fecha, "hora": v.hora,
+             "notas": v.notas, "estado": v.estado, "creado_at": _col(v.creado_at)}
+            for v in result.scalars().all()
+        ]
+
+
+async def obtener_visitas_proximas() -> list[dict]:
+    """Visitas a partir de hoy, ordenadas por fecha."""
+    hoy = (datetime.utcnow() + _COL).strftime("%Y-%m-%d")
+    async with async_session() as session:
+        result = await session.execute(
+            select(Visita)
+            .where(Visita.fecha >= hoy, Visita.estado == "confirmada")
+            .order_by(Visita.fecha.asc(), Visita.hora.asc())
+        )
+        return [
+            {"id": v.id, "telefono": v.telefono, "nombre": v.nombre,
+             "fecha": v.fecha, "hora": v.hora, "notas": v.notas}
+            for v in result.scalars().all()
+        ]
+
+
+async def cancelar_visita(visita_id: int) -> None:
+    async with async_session() as session:
+        result = await session.execute(select(Visita).where(Visita.id == visita_id))
+        v = result.scalar_one_or_none()
+        if v:
+            v.estado = "cancelada"
+            await session.commit()
 
 
 # ── Notas del asesor ──────────────────────────────────────────────────────────

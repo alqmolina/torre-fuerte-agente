@@ -31,6 +31,11 @@ from agent.memory import (
     guardar_nota,
     obtener_notas,
     actualizar_lead,
+    guardar_visita,
+    obtener_visitas_lead,
+    obtener_visitas_proximas,
+    cancelar_visita,
+    obtener_idioma,
     Handoff,
     async_session,
 )
@@ -45,6 +50,24 @@ ADMIN_PASSWORD = os.getenv("TF_ADMIN_PASSWORD") or os.getenv("ADMIN_PASSWORD", _
 _SECRET = ADMIN_PASSWORD
 
 _ICONOS = {"caliente": "🔥", "tibio": "🌡️", "frío": "❄️", "frio": "❄️"}
+
+_DIAS_ES = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+_MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
+             "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+_DIAS_EN = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+_MESES_EN = ["January", "February", "March", "April", "May", "June",
+             "July", "August", "September", "October", "November", "December"]
+
+
+def _fmt_fecha(fecha: str, idioma: str = "es") -> str:
+    try:
+        from datetime import datetime as _dt
+        d = _dt.strptime(fecha, "%Y-%m-%d")
+        if idioma == "en":
+            return f"{_DIAS_EN[d.weekday()]}, {_MESES_EN[d.month-1]} {d.day}, {d.year}"
+        return f"{_DIAS_ES[d.weekday()]}, {d.day} de {_MESES_ES[d.month-1]} de {d.year}"
+    except Exception:
+        return fecha
 
 
 def _esc(text: str) -> str:
@@ -281,6 +304,7 @@ async def admin_index(request: Request):
       <div style="font-size:13px;opacity:0.7;margin-top:2px">Conversaciones en transferencia</div>
     </div>
     {badge}
+    <a href="/admin/visitas" style="color:rgba(255,255,255,0.8);font-size:12px;text-decoration:none;margin-right:12px">📅 Visitas</a>
     <a href="/admin/broadcast" style="color:rgba(255,255,255,0.8);font-size:12px;text-decoration:none;margin-right:12px">📢 Broadcast</a>
     <a href="/admin/dashboard" style="color:rgba(255,255,255,0.8);font-size:12px;text-decoration:none;margin-right:12px">📊 Métricas</a>
     <a href="/admin/logout" style="color:rgba(255,255,255,0.6);font-size:12px;text-decoration:none">Salir</a>
@@ -325,11 +349,28 @@ async def admin_chat(telefono: str, request: Request):
                 nombre_raw = _h2.nombre
 
     notas = await obtener_notas(telefono)
+    visitas = await obtener_visitas_lead(telefono)
 
     nombre = _esc(nombre_raw) if nombre_raw else "Desconocido"
     apto = _esc(apto_raw) if apto_raw else ""
     intencion = _esc(intencion_raw.capitalize()) if intencion_raw else ""
     resumen_html = _esc(resumen_raw).replace("\n", "<br>") if resumen_raw else ""
+
+    if visitas:
+        visitas_items_html = ""
+        for v in visitas:
+            color = "#27ae60" if v["estado"] == "confirmada" else "#aaa"
+            tachado = "text-decoration:line-through;color:#aaa" if v["estado"] == "cancelada" else ""
+            fecha_fmt = _fmt_fecha(v["fecha"])
+            visitas_items_html += (
+                f'<div style="padding:8px 0;border-bottom:1px solid #a9dfbf;font-size:13px">'
+                f'<div style="font-weight:600;color:{color};{tachado}">📅 {_esc(fecha_fmt)} · ⏰ {_esc(v["hora"])}</div>'
+                + (f'<div style="font-size:12px;color:#666;margin-top:2px">{_esc(v["notas"])}</div>' if v["notas"] else '')
+                + f'<div style="font-size:11px;color:#aaa;margin-top:2px">{v["estado"].upper()}</div>'
+                f'</div>'
+            )
+    else:
+        visitas_items_html = '<p style="font-size:12px;color:#bbb;padding:6px 0">Sin visitas agendadas</p>'
 
     if notas:
         notas_items_html = "".join(
@@ -424,6 +465,11 @@ async def admin_chat(telefono: str, request: Request):
       </div>
       <div style="font-size:12px;opacity:0.7">{subtitulo_extra}Respondiendo como Torre Fuerte</div>
     </div>
+    <a href="/admin/visita/{tel_esc}"
+       style="background:rgba(255,255,255,0.15);color:white;border:1px solid rgba(255,255,255,0.3);
+              padding:6px 12px;border-radius:20px;font-size:12px;text-decoration:none;white-space:nowrap">
+      📅 Agendar
+    </a>
     <a href="/admin/lead/{tel_esc}/editar"
        style="background:rgba(255,255,255,0.15);color:white;border:1px solid rgba(255,255,255,0.3);
               padding:6px 12px;border-radius:20px;font-size:12px;text-decoration:none;white-space:nowrap">
@@ -446,6 +492,19 @@ async def admin_chat(telefono: str, request: Request):
     <div style="font-size:11px;font-weight:700;color:#b7860b;margin-bottom:4px;letter-spacing:0.5px">📋 RESUMEN DE LA CONVERSACIÓN</div>
     <div style="font-size:13px;color:#555;line-height:1.5">{resumen_html}</div>
   </div>''' if resumen_html else ''}
+  <details style="background:#e8f8f0;border-bottom:1px solid #a9dfbf;flex-shrink:0" {'open' if visitas else ''}>
+    <summary style="padding:10px 16px;cursor:pointer;font-size:11px;font-weight:700;color:#1e8449;letter-spacing:0.5px;user-select:none;list-style:none;display:flex;align-items:center;gap:6px">
+      📅 VISITAS AGENDADAS <span style="background:#1e8449;color:white;border-radius:10px;padding:1px 7px;font-size:10px">{len(visitas)}</span>
+    </summary>
+    <div style="padding:0 16px 12px">
+      {visitas_items_html}
+      <a href="/admin/visita/{tel_esc}"
+         style="display:inline-block;margin-top:10px;background:#1e8449;color:white;
+                border-radius:6px;padding:7px 14px;font-size:13px;text-decoration:none;font-weight:600">
+        + Agendar nueva visita
+      </a>
+    </div>
+  </details>
   <details style="background:#f5f0ff;border-bottom:1px solid #ddd0f8;flex-shrink:0" {'open' if notas else ''}>
     <summary style="padding:10px 16px;cursor:pointer;font-size:11px;font-weight:700;color:#7c4dbd;letter-spacing:0.5px;user-select:none;list-style:none;display:flex;align-items:center;gap:6px">
       📝 NOTAS INTERNAS <span style="background:#7c4dbd;color:white;border-radius:10px;padding:1px 7px;font-size:10px">{len(notas)}</span>
@@ -1043,6 +1102,202 @@ async def broadcast_historial(request: Request):
   </script>
 </body>
 </html>"""
+
+
+@router.get("/visitas", response_class=HTMLResponse)
+async def admin_visitas(request: Request):
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
+
+    visitas = await obtener_visitas_proximas()
+
+    filas = ""
+    for v in visitas:
+        fecha_fmt = _fmt_fecha(v["fecha"])
+        filas += (
+            f'<div style="background:white;border-radius:10px;padding:14px 16px;margin-bottom:10px;'
+            f'box-shadow:0 1px 4px rgba(0,0,0,0.08);border-left:4px solid #27ae60">'
+            f'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">'
+            f'<div>'
+            f'<div style="font-weight:600;font-size:15px;color:#1a3c5e">{_esc(v["nombre"] or "Sin nombre")}</div>'
+            f'<div style="font-size:13px;color:#27ae60;font-weight:600;margin-top:4px">📅 {_esc(fecha_fmt)} · ⏰ {_esc(v["hora"])}</div>'
+            + (f'<div style="font-size:13px;color:#666;margin-top:4px">{_esc(v["notas"])}</div>' if v["notas"] else '')
+            + f'<div style="font-size:12px;color:#999;margin-top:4px">📱 {_esc(v["telefono"])}</div>'
+            f'</div>'
+            f'<div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">'
+            f'<a href="/admin/chat/{_esc(v["telefono"])}" style="background:#1a3c5e;color:white;border-radius:6px;'
+            f'padding:6px 12px;font-size:12px;text-decoration:none;font-weight:600;white-space:nowrap">Ver chat</a>'
+            f'<form method="post" action="/admin/visita/{v["id"]}/cancelar" style="margin:0">'
+            f'<button type="submit" onclick="return confirm(\'¿Cancelar esta visita?\')" '
+            f'style="background:#fde8e8;color:#c0392b;border:1px solid #f5b7b1;border-radius:6px;'
+            f'padding:6px 12px;font-size:12px;cursor:pointer;width:100%;white-space:nowrap">Cancelar</button>'
+            f'</form>'
+            f'</div></div></div>'
+        )
+
+    if not filas:
+        filas = '<div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:40px;margin-bottom:12px">📅</div><p>No hay visitas próximas confirmadas</p></div>'
+
+    return f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Visitas — Torre Fuerte</title>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; }}
+    .header {{ background: #1a3c5e; color: white; padding: 16px 20px; display: flex; align-items: center; gap: 12px; }}
+    .container {{ max-width: 700px; margin: 0 auto; padding: 20px 16px; }}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/admin" style="color:white;text-decoration:none;font-size:20px">←</a>
+    <div style="flex:1">
+      <div style="font-size:18px;font-weight:600">Torre Fuerte · Visitas</div>
+      <div style="font-size:12px;opacity:0.7">Próximas visitas al proyecto</div>
+    </div>
+    <a href="/admin/logout" style="color:rgba(255,255,255,0.6);font-size:12px;text-decoration:none">Salir</a>
+  </div>
+  <div class="container">
+    {filas}
+  </div>
+</body>
+</html>"""
+
+
+@router.get("/visita/{telefono}", response_class=HTMLResponse)
+async def visita_form(telefono: str, request: Request):
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
+
+    perfil = await obtener_perfil_lead(telefono)
+    nombre_v = _esc((perfil or {}).get("nombre") or "")
+    tel_esc = _esc(telefono)
+
+    from datetime import date as _date
+    hoy = _date.today().isoformat()
+
+    horas = ["09:00","09:30","10:00","10:30","11:00","11:30",
+             "14:00","14:30","15:00","15:30","16:00","16:30","17:00"]
+    opciones_hora = "".join(f'<option value="{h}">{h}</option>' for h in horas)
+
+    return f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agendar Visita</title>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; }}
+    .header {{ background: #1a3c5e; color: white; padding: 16px 20px; display: flex; align-items: center; gap: 12px; }}
+    .container {{ max-width: 520px; margin: 0 auto; padding: 20px 16px; }}
+    .card {{ background: white; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }}
+    label {{ display: block; font-size: 13px; font-weight: 600; color: #555; margin-bottom: 6px; }}
+    input[type=text], input[type=date], select, textarea {{
+      width: 100%; border: 1px solid #ddd; border-radius: 8px;
+      padding: 10px 12px; font-size: 15px; outline: none; font-family: inherit; }}
+    input:focus, select:focus, textarea:focus {{ border-color: #1a3c5e; }}
+    .field {{ margin-bottom: 16px; }}
+    .grid-2 {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }}
+    .btn-save {{ width: 100%; background: #1e8449; color: white; border: none; border-radius: 8px;
+                 padding: 14px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 4px; }}
+    .btn-save:hover {{ background: #196f3d; }}
+    .check-row {{ display: flex; align-items: center; gap: 8px; font-size: 14px; color: #555; cursor: pointer; }}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/admin/chat/{tel_esc}" style="color:white;text-decoration:none;font-size:20px">←</a>
+    <div>
+      <div style="font-size:17px;font-weight:600">Agendar Visita</div>
+      <div style="font-size:12px;opacity:0.7">📱 {tel_esc}</div>
+    </div>
+  </div>
+  <div class="container">
+    <form method="post" action="/admin/visita/{tel_esc}">
+      <div class="card">
+        <div class="field">
+          <label>Nombre del lead</label>
+          <input type="text" name="nombre" value="{nombre_v}" placeholder="Nombre" required>
+        </div>
+        <div class="grid-2">
+          <div class="field">
+            <label>Fecha de visita</label>
+            <input type="date" name="fecha" min="{hoy}" required>
+          </div>
+          <div class="field">
+            <label>Hora</label>
+            <select name="hora">{opciones_hora}</select>
+          </div>
+        </div>
+        <div class="field" style="margin-bottom:16px">
+          <label>Notas internas (opcional)</label>
+          <textarea name="notas" rows="2" placeholder="Ej: Interesado en penthouse, viene con pareja..."></textarea>
+        </div>
+        <label class="check-row" style="margin-bottom:20px">
+          <input type="checkbox" name="enviar_wp" value="1" checked style="width:auto;accent-color:#1e8449">
+          Enviar confirmación por WhatsApp al lead
+        </label>
+        <button type="submit" class="btn-save">📅 Confirmar visita</button>
+      </div>
+    </form>
+  </div>
+</body>
+</html>"""
+
+
+@router.post("/visita/{telefono}")
+async def visita_save(
+    telefono: str,
+    request: Request,
+    nombre: str = Form(...),
+    fecha: str = Form(...),
+    hora: str = Form(...),
+    notas: str = Form(default=""),
+    enviar_wp: str = Form(default=""),
+):
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
+
+    await guardar_visita(telefono, nombre.strip(), fecha, hora, notas.strip())
+
+    if enviar_wp == "1" and proveedor:
+        idioma = await obtener_idioma(telefono) or "es"
+        fecha_fmt = _fmt_fecha(fecha, idioma)
+        notas_line = f"\n📝 {notas.strip()}" if notas.strip() else ""
+        if idioma == "en":
+            msg = (
+                f"🏢 *Torre Fuerte — Visit Confirmed*\n\n"
+                f"Hello {nombre.strip()}, your visit to Torre Fuerte is confirmed:\n\n"
+                f"📅 *Date:* {fecha_fmt}\n"
+                f"⏰ *Time:* {hora}"
+                f"{notas_line}\n\n"
+                f"We look forward to seeing you! To reschedule, just reply here."
+            )
+        else:
+            msg = (
+                f"🏢 *Torre Fuerte — Visita confirmada*\n\n"
+                f"Hola {nombre.strip()}, confirmamos tu visita al proyecto:\n\n"
+                f"📅 *Fecha:* {fecha_fmt}\n"
+                f"⏰ *Hora:* {hora}"
+                f"{notas_line}\n\n"
+                f"¡Te esperamos! Si necesitas cambiar la fecha, escríbenos aquí."
+            )
+        await proveedor.enviar_mensaje(telefono, msg)
+
+    return RedirectResponse(f"/admin/chat/{telefono}", status_code=303)
+
+
+@router.post("/visita/{visita_id}/cancelar")
+async def visita_cancelar(visita_id: int, request: Request):
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
+    await cancelar_visita(visita_id)
+    referer = request.headers.get("referer", "/admin/visitas")
+    return RedirectResponse(referer, status_code=303)
 
 
 @router.get("/lead/{telefono}/editar", response_class=HTMLResponse)
