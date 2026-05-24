@@ -1275,29 +1275,40 @@ async def visita_save(
 
     await guardar_visita(telefono, nombre.strip(), fecha, hora, notas.strip())
 
-    if enviar_wp == "1" and proveedor:
-        idioma = await obtener_idioma(telefono) or "es"
-        fecha_fmt = _fmt_fecha(fecha, idioma)
-        notas_line = f"\n📝 {notas.strip()}" if notas.strip() else ""
-        if idioma == "en":
-            msg = (
-                f"🏢 *Torre Fuerte — Visit Confirmed*\n\n"
-                f"Hello {nombre.strip()}, your visit to Torre Fuerte is confirmed:\n\n"
-                f"📅 *Date:* {fecha_fmt}\n"
-                f"⏰ *Time:* {hora}"
-                f"{notas_line}\n\n"
-                f"We look forward to seeing you! To reschedule, just reply here."
-            )
+    if enviar_wp == "1":
+        if not proveedor:
+            logger.warning("visita_save: proveedor es None, no se envió confirmación")
         else:
-            msg = (
-                f"🏢 *Torre Fuerte — Visita confirmada*\n\n"
-                f"Hola {nombre.strip()}, confirmamos tu visita al proyecto:\n\n"
-                f"📅 *Fecha:* {fecha_fmt}\n"
-                f"⏰ *Hora:* {hora}"
-                f"{notas_line}\n\n"
-                f"¡Te esperamos! Si necesitas cambiar la fecha, escríbenos aquí."
-            )
-        await proveedor.enviar_mensaje(telefono, msg)
+            try:
+                tel_envio = telefono.lstrip("+")
+                idioma = await obtener_idioma(telefono) or "es"
+                fecha_fmt = _fmt_fecha(fecha, idioma)
+                notas_line = f"\n📝 {notas.strip()}" if notas.strip() else ""
+                if idioma == "en":
+                    msg = (
+                        f"Torre Fuerte — Visit Confirmed\n\n"
+                        f"Hello {nombre.strip()}, your visit to Torre Fuerte is confirmed:\n\n"
+                        f"Date: {fecha_fmt}\n"
+                        f"Time: {hora}"
+                        f"{notas_line}\n\n"
+                        f"We look forward to seeing you! To reschedule, just reply here."
+                    )
+                else:
+                    msg = (
+                        f"Torre Fuerte — Visita confirmada\n\n"
+                        f"Hola {nombre.strip()}, confirmamos tu visita al proyecto:\n\n"
+                        f"Fecha: {fecha_fmt}\n"
+                        f"Hora: {hora}"
+                        f"{notas_line}\n\n"
+                        f"Te esperamos! Si necesitas cambiar la fecha, escribenos aqui."
+                    )
+                ok = await proveedor.enviar_mensaje(tel_envio, msg)
+                if ok:
+                    logger.info(f"Confirmacion visita enviada a {tel_envio}")
+                else:
+                    logger.error(f"Fallo envio confirmacion visita a {tel_envio} — enviar_mensaje retorno False")
+            except Exception as e:
+                logger.error(f"Error enviando confirmacion visita a {telefono}: {type(e).__name__}: {e}")
 
     return RedirectResponse(f"/admin/chat/{telefono}", status_code=303)
 
