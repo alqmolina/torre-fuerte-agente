@@ -215,6 +215,17 @@ def extraer_marcador_handoff(texto: str) -> tuple[str, str | None]:
     return texto_limpio, razon
 
 
+def extraer_marcador_cancelar_visita(texto: str) -> tuple[str, int | None]:
+    """Extrae [CANCELAR_VISITA:id] del texto. Retorna (texto_limpio, visita_id o None)."""
+    patron = re.compile(r'\[CANCELAR_VISITA:(\d+)\]', re.IGNORECASE)
+    m = patron.search(texto)
+    if not m:
+        return texto, None
+    visita_id = int(m.group(1))
+    texto_limpio = patron.sub("", texto).strip()
+    return texto_limpio, visita_id
+
+
 def extraer_marcador_visita(texto: str) -> tuple[str, dict | None]:
     """Extrae [VISITA:nombre|YYYY-MM-DD|HH:MM|notas] del texto.
 

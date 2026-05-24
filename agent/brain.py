@@ -191,7 +191,7 @@ async def generar_resumen_handoff(historial: list[dict], nombre: str, temperatur
         return ""
 
 
-async def generar_respuesta(mensaje: str, historial: list[dict], perfil: dict | None = None, idioma: str | None = None) -> str:
+async def generar_respuesta(mensaje: str, historial: list[dict], perfil: dict | None = None, idioma: str | None = None, telefono: str | None = None) -> str:
     """
     Genera una respuesta usando Claude API.
 
@@ -343,6 +343,48 @@ async def generar_respuesta(mensaje: str, historial: list[dict], perfil: dict | 
                 f"- Primera consulta: {perfil['fecha']}\n"
             )
         system_prompt += datos
+
+    # Inyectar visitas activas del lead para que Claude pueda gestionarlas
+    if telefono:
+        try:
+            from agent.memory import obtener_visitas_lead
+            todas = await obtener_visitas_lead(telefono)
+            activas = [v for v in todas if v.get("estado") not in ("cancelada", "completada")]
+            if activas:
+                if idioma == "en":
+                    lineas = "\n".join(
+                        f"  • ID:{v['id']} | {v['fecha']} at {v['hora']}"
+                        + (f" | {v['notas']}" if v.get("notas") else "")
+                        for v in activas
+                    )
+                    system_prompt += (
+                        "\n\n## Lead's scheduled visits\n"
+                        f"{lineas}\n\n"
+                        "If the lead asks to cancel a visit:\n"
+                        "1. Show them the visit details and ask for confirmation.\n"
+                        "2. Once they confirm, add at the END of your response: `[CANCELAR_VISITA:ID]` "
+                        "(use the actual numeric ID from the list above).\n"
+                        "3. Confirm in your message that the visit has been cancelled.\n"
+                        "Do NOT emit [CANCELAR_VISITA] without explicit confirmation from the lead."
+                    )
+                else:
+                    lineas = "\n".join(
+                        f"  • ID:{v['id']} | {v['fecha']} a las {v['hora']}"
+                        + (f" | {v['notas']}" if v.get("notas") else "")
+                        for v in activas
+                    )
+                    system_prompt += (
+                        "\n\n## Visitas agendadas del lead\n"
+                        f"{lineas}\n\n"
+                        "Si el lead pide cancelar su visita:\n"
+                        "1. Muéstrale los datos de la visita y pídele confirmación explícita.\n"
+                        "2. Cuando confirme, agrega AL FINAL de tu respuesta: `[CANCELAR_VISITA:ID]` "
+                        "(usa el ID numérico real de la lista de arriba).\n"
+                        "3. Confirma en tu mensaje que la visita fue cancelada.\n"
+                        "NO emitas [CANCELAR_VISITA] sin confirmación explícita del lead."
+                    )
+        except Exception as e:
+            logger.warning(f"No se pudieron cargar visitas del lead: {e}")
 
     mensajes = []
     for msg in historial:
