@@ -13,6 +13,7 @@ from typing import List
 from fastapi import APIRouter, Form, Request, UploadFile, File
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from agent.tools import exportar_visitas_excel
+from agent.google_calendar import crear_evento_visita, actualizar_evento_visita, eliminar_evento_visita
 
 logger = logging.getLogger("agentkit")
 
@@ -41,6 +42,9 @@ from agent.memory import (
     completar_visita,
     obtener_visita_por_id,
     editar_visita,
+    guardar_evento_id,
+    obtener_evento_id,
+    borrar_evento_id,
     obtener_idioma,
     buscar_leads,
     obtener_actividad_lead,
@@ -1590,7 +1594,12 @@ async def visita_save(
     if not _autenticado(request):
         return RedirectResponse("/admin/login", status_code=302)
 
-    await guardar_visita(telefono, nombre.strip(), fecha, hora, notas.strip())
+    visita_id = await guardar_visita(telefono, nombre.strip(), fecha, hora, notas.strip())
+    event_id = await asyncio.to_thread(
+        crear_evento_visita, visita_id, nombre.strip(), telefono, fecha, hora, notas.strip()
+    )
+    if event_id:
+        await guardar_evento_id(visita_id, event_id)
 
     if enviar_wp == "1":
         if not proveedor:
@@ -1718,6 +1727,12 @@ async def visita_editar_save(
 
     await editar_visita(visita_id, nombre.strip(), fecha, hora, notas.strip())
 
+    event_id = await obtener_evento_id(visita_id)
+    if event_id:
+        await asyncio.to_thread(
+            actualizar_evento_visita, event_id, nombre.strip(), v["telefono"], fecha, hora, notas.strip()
+        )
+
     if enviar_wp == "1" and proveedor:
         try:
             tel_envio = v["telefono"].lstrip("+")
@@ -1753,7 +1768,11 @@ async def visita_editar_save(
 async def visita_cancelar(visita_id: int, request: Request):
     if not _autenticado(request):
         return RedirectResponse("/admin/login", status_code=302)
+    event_id = await obtener_evento_id(visita_id)
     await cancelar_visita(visita_id)
+    if event_id:
+        await asyncio.to_thread(eliminar_evento_visita, event_id)
+        await borrar_evento_id(visita_id)
     referer = request.headers.get("referer", "/admin/visitas")
     return RedirectResponse(referer, status_code=303)
 

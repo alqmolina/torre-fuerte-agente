@@ -119,6 +119,14 @@ class Visita(Base):
     creado_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class EventoCalendario(Base):
+    """Mapeo entre visita_id y event_id de Google Calendar."""
+    __tablename__ = "eventos_calendario"
+
+    visita_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(200))
+
+
 class RecordatorioEnviado(Base):
     """Registro de recordatorios de visita ya enviados."""
     __tablename__ = "recordatorios_enviados"
@@ -846,6 +854,33 @@ async def buscar_visitas(
              "pasada": bool(v.fecha and v.fecha < hoy)}
             for v in ordenadas
         ]
+
+
+async def guardar_evento_id(visita_id: int, event_id: str) -> None:
+    """Guarda la relación visita_id → Google Calendar event_id."""
+    async with async_session() as session:
+        existing = await session.get(EventoCalendario, visita_id)
+        if existing:
+            existing.event_id = event_id
+        else:
+            session.add(EventoCalendario(visita_id=visita_id, event_id=event_id))
+        await session.commit()
+
+
+async def obtener_evento_id(visita_id: int) -> str | None:
+    """Retorna el Google Calendar event_id de una visita, o None."""
+    async with async_session() as session:
+        row = await session.get(EventoCalendario, visita_id)
+        return row.event_id if row else None
+
+
+async def borrar_evento_id(visita_id: int) -> None:
+    """Elimina el registro de evento de calendario para una visita."""
+    async with async_session() as session:
+        row = await session.get(EventoCalendario, visita_id)
+        if row:
+            await session.delete(row)
+            await session.commit()
 
 
 async def obtener_todas_las_visitas() -> list[dict]:

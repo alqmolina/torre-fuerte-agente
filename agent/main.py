@@ -24,8 +24,10 @@ from agent.memory import (
     obtener_leads_para_seguimiento, registrar_seguimiento,
     guardar_visita, cancelar_visita, reagendar_visita,
     obtener_visitas_para_recordatorio, marcar_recordatorio,
+    guardar_evento_id, obtener_evento_id, borrar_evento_id,
 )
 import agent.admin as admin_module
+from agent.google_calendar import crear_evento_visita, actualizar_evento_visita, eliminar_evento_visita
 from agent.tools import (
     extraer_marcadores_plano,
     extraer_marcadores_render,
@@ -543,7 +545,7 @@ async def webhook_handler(request: Request):
                 nombre_v = visita_data["nombre"]
                 if perfil and perfil.get("nombre"):
                     nombre_v = perfil["nombre"]
-                await guardar_visita(
+                visita_id = await guardar_visita(
                     msg.telefono,
                     nombre_v,
                     visita_data["fecha"],
@@ -558,11 +560,21 @@ async def webhook_handler(request: Request):
                     msg.telefono, nombre_v,
                     visita_data["fecha"], visita_data["hora"], visita_data["notas"],
                 )
+                event_id = await asyncio.to_thread(
+                    crear_evento_visita, visita_id, nombre_v, msg.telefono,
+                    visita_data["fecha"], visita_data["hora"], visita_data["notas"]
+                )
+                if event_id:
+                    await guardar_evento_id(visita_id, event_id)
 
             # Cancelación de visita: Claude emitió [CANCELAR_VISITA:id]
             if cancelar_visita_id:
                 await cancelar_visita(cancelar_visita_id)
                 logger.info(f"Visita {cancelar_visita_id} cancelada via WhatsApp ({msg.telefono})")
+                event_id = await obtener_evento_id(cancelar_visita_id)
+                if event_id:
+                    await asyncio.to_thread(eliminar_evento_visita, event_id)
+                    await borrar_evento_id(cancelar_visita_id)
 
             # Reagendamiento de visita: Claude emitió [REAGENDAR_VISITA:id|fecha|hora]
             if reagendar_data:
@@ -574,6 +586,12 @@ async def webhook_handler(request: Request):
                     reagendar_data["fecha"], reagendar_data["hora"], "",
                     tipo="reagenda",
                 )
+                event_id = await obtener_evento_id(reagendar_data["id"])
+                if event_id:
+                    await asyncio.to_thread(
+                        actualizar_evento_visita, event_id, nombre_r, msg.telefono,
+                        reagendar_data["fecha"], reagendar_data["hora"]
+                    )
 
             # Handoff: Claude emitió [HANDOFF] → transferir a asesor
             if razon_handoff and not await esta_en_handoff(msg.telefono):

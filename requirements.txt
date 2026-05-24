@@ -10,3 +10,5 @@ asyncpg>=0.29.0
 python-multipart>=0.0.6
 aiofiles>=23.0.0
 openpyxl>=3.1.0
+google-api-python-client>=2.100.0
+google-auth>=2.23.0
