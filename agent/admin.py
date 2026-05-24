@@ -37,6 +37,7 @@ from agent.memory import (
     cancelar_visita,
     completar_visita,
     obtener_idioma,
+    buscar_leads,
     Handoff,
     async_session,
 )
@@ -305,6 +306,7 @@ async def admin_index(request: Request):
       <div style="font-size:13px;opacity:0.7;margin-top:2px">Conversaciones en transferencia</div>
     </div>
     {badge}
+    <a href="/admin/buscar" style="color:rgba(255,255,255,0.8);font-size:12px;text-decoration:none;margin-right:12px">🔍 Buscar</a>
     <a href="/admin/visitas" style="color:rgba(255,255,255,0.8);font-size:12px;text-decoration:none;margin-right:12px">📅 Visitas</a>
     <a href="/admin/broadcast" style="color:rgba(255,255,255,0.8);font-size:12px;text-decoration:none;margin-right:12px">📢 Broadcast</a>
     <a href="/admin/dashboard" style="color:rgba(255,255,255,0.8);font-size:12px;text-decoration:none;margin-right:12px">📊 Métricas</a>
@@ -1107,6 +1109,127 @@ async def broadcast_historial(request: Request):
     const enProceso = document.querySelector('[style*="f39c12"]');
     if (enProceso) setTimeout(() => location.reload(), 5000);
   </script>
+</body>
+</html>"""
+
+
+@router.get("/buscar", response_class=HTMLResponse)
+async def admin_buscar(
+    request: Request,
+    q: str = "",
+    apto: str = "",
+    fecha_chat: str = "",
+    fecha_visita: str = "",
+):
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
+
+    resultados = await buscar_leads(q, apto, fecha_chat, fecha_visita)
+    hay_filtro = any([q, apto, fecha_chat, fecha_visita])
+
+    _ICONOS = {"caliente": "🔴", "tibio": "🟡", "frio": "🔵"}
+
+    filas = ""
+    for r in resultados:
+        temp = (r["temperatura"] or "").lower()
+        icono = _ICONOS.get(temp, "⚪")
+        badge_temp = (
+            f'<span style="background:{"#fde8e8" if temp=="caliente" else "#fef3cd" if temp=="tibio" else "#dbeafe"};'
+            f'color:{"#c0392b" if temp=="caliente" else "#d68910" if temp=="tibio" else "#1a56db"};'
+            f'border-radius:10px;padding:1px 8px;font-size:11px;font-weight:600">'
+            f'{icono} {(r["temperatura"] or "sin temp").upper()}</span>'
+        ) if r["temperatura"] else ""
+
+        visita_html = (
+            f'<span style="font-size:11px;color:#27ae60;font-weight:600">📅 {_esc(r["proxima_visita"])}</span>'
+            if r["proxima_visita"] else ""
+        )
+        chat_html = (
+            f'<span style="font-size:11px;color:#888">💬 {_esc(r["ultimo_chat"])}</span>'
+            if r["ultimo_chat"] else ""
+        )
+
+        filas += (
+            f'<div style="background:white;border-radius:10px;padding:14px 16px;margin-bottom:8px;'
+            f'box-shadow:0 1px 4px rgba(0,0,0,0.07);display:flex;justify-content:space-between;align-items:center;gap:12px">'
+            f'<div style="flex:1;min-width:0">'
+            f'<div style="font-weight:600;font-size:15px;color:#1a3c5e">{_esc(r["nombre"] or "Sin nombre")}</div>'
+            f'<div style="font-size:12px;color:#888;margin-top:2px">{_esc(r["telefono"])}'
+            + (f' · {_esc(r["apto"])}' if r["apto"] else "")
+            + (f' · {_esc(r["habitaciones"])} hab' if r["habitaciones"] else "")
+            + f'</div>'
+            f'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">'
+            f'{badge_temp}{visita_html}{chat_html}'
+            f'</div></div>'
+            f'<a href="/admin/chat/{_esc(r["telefono"])}" style="background:#1a3c5e;color:white;border-radius:6px;'
+            f'padding:7px 14px;font-size:12px;text-decoration:none;font-weight:600;white-space:nowrap">Ver chat</a>'
+            f'</div>'
+        )
+
+    if hay_filtro and not filas:
+        filas = '<div style="text-align:center;padding:40px;color:#aaa"><p>Sin resultados para esos filtros</p></div>'
+    elif not hay_filtro and not filas:
+        filas = '<div style="text-align:center;padding:40px;color:#aaa"><p>No hay leads registrados aún</p></div>'
+
+    total_txt = f'<div style="font-size:12px;color:#888;margin-bottom:12px">{len(resultados)} resultado{"s" if len(resultados)!=1 else ""}</div>' if hay_filtro else ""
+
+    return f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Buscar Leads — Torre Fuerte</title>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; }}
+    .header {{ background: #1a3c5e; color: white; padding: 16px 20px; display: flex; align-items: center; gap: 12px; }}
+    .container {{ max-width: 700px; margin: 0 auto; padding: 20px 16px; }}
+    input {{ width: 100%; padding: 9px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; }}
+    input:focus {{ outline: none; border-color: #1a3c5e; }}
+    label {{ font-size: 12px; font-weight: 600; color: #555; display: block; margin-bottom: 4px; }}
+    .grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }}
+    button {{ background: #1a3c5e; color: white; border: none; border-radius: 8px; padding: 10px 24px;
+              font-size: 14px; font-weight: 600; cursor: pointer; width: 100%; }}
+    button:hover {{ background: #15304d; }}
+    .clear {{ background: #f0f4f8; color: #555; border: 1px solid #d1d5db; margin-top: 6px; }}
+    .clear:hover {{ background: #e5e7eb; }}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/admin" style="color:white;text-decoration:none;font-size:20px">←</a>
+    <div style="flex:1">
+      <div style="font-size:18px;font-weight:600">Torre Fuerte · Buscar Leads</div>
+      <div style="font-size:12px;opacity:0.7">Filtra por nombre, teléfono, apartamento o fechas</div>
+    </div>
+    <a href="/admin/logout" style="color:rgba(255,255,255,0.6);font-size:12px;text-decoration:none">Salir</a>
+  </div>
+  <div class="container">
+    <form method="get" action="/admin/buscar" style="background:white;border-radius:12px;padding:16px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,0.07)">
+      <div class="grid">
+        <div>
+          <label>Nombre o teléfono</label>
+          <input type="text" name="q" value="{_esc(q)}" placeholder="Juan Pérez o 573001234567">
+        </div>
+        <div>
+          <label>Apartamento</label>
+          <input type="text" name="apto" value="{_esc(apto)}" placeholder="D-401, penthouse...">
+        </div>
+        <div>
+          <label>Fecha de chat</label>
+          <input type="date" name="fecha_chat" value="{_esc(fecha_chat)}">
+        </div>
+        <div>
+          <label>Fecha de visita</label>
+          <input type="date" name="fecha_visita" value="{_esc(fecha_visita)}">
+        </div>
+      </div>
+      <button type="submit">Buscar</button>
+      {"<a href='/admin/buscar'><button type='button' class='clear'>Limpiar filtros</button></a>" if hay_filtro else ""}
+    </form>
+    {total_txt}
+    {filas}
+  </div>
 </body>
 </html>"""
 

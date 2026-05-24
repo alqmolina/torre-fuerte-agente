@@ -299,6 +299,67 @@ async def obtener_todos_los_leads() -> list[dict]:
         ]
 
 
+async def buscar_leads(
+    query: str = "",
+    apartamento: str = "",
+    fecha_chat: str = "",
+    fecha_visita: str = "",
+) -> list[dict]:
+    """Busca leads por nombre/teléfono, apartamento, fecha de chat o fecha de visita."""
+    async with async_session() as session:
+        stmt = select(Lead)
+
+        if query.strip():
+            q = f"%{query.strip()}%"
+            stmt = stmt.where(or_(Lead.nombre.ilike(q), Lead.telefono.ilike(q)))
+
+        if apartamento.strip():
+            stmt = stmt.where(Lead.apto.ilike(f"%{apartamento.strip()}%"))
+
+        if fecha_chat.strip():
+            sub = select(Mensaje.telefono).where(
+                func.date(Mensaje.timestamp) == fecha_chat.strip()
+            ).distinct()
+            stmt = stmt.where(Lead.telefono.in_(sub))
+
+        if fecha_visita.strip():
+            sub = select(Visita.telefono).where(
+                Visita.fecha == fecha_visita.strip(),
+                Visita.estado != "cancelada",
+            ).distinct()
+            stmt = stmt.where(Lead.telefono.in_(sub))
+
+        result = await session.execute(stmt.order_by(Lead.fecha.desc()))
+        leads = result.scalars().all()
+
+        resultados = []
+        for lead in leads:
+            # Último mensaje
+            ult = await session.scalar(
+                select(func.max(Mensaje.timestamp)).where(Mensaje.telefono == lead.telefono)
+            )
+            # Próxima visita confirmada
+            vr = await session.execute(
+                select(Visita).where(
+                    Visita.telefono == lead.telefono,
+                    or_(Visita.estado == "confirmada", Visita.estado.is_(None)),
+                ).order_by(Visita.fecha.asc(), Visita.hora.asc()).limit(1)
+            )
+            prox = vr.scalar_one_or_none()
+            resultados.append({
+                "telefono": lead.telefono,
+                "nombre": lead.nombre,
+                "apto": lead.apto,
+                "habitaciones": lead.habitaciones,
+                "temperatura": lead.temperatura,
+                "intencion": lead.intencion,
+                "fecha_registro": _col(lead.fecha).strftime("%Y-%m-%d") if lead.fecha else "",
+                "ultimo_chat": _col(ult).strftime("%Y-%m-%d %H:%M") if ult else "",
+                "proxima_visita": f"{prox.fecha} {prox.hora}" if prox else "",
+            })
+        return resultados
+
+
 # ── Seguimiento de leads ───────────────────────────────────────────────────────
 
 # Horas desde el último mensaje para enviar cada seguimiento
