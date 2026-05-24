@@ -672,7 +672,11 @@ async def obtener_visitas_proximas() -> list[dict]:
     async with async_session() as session:
         result = await session.execute(
             select(Visita)
-            .where(or_(Visita.estado == "confirmada", Visita.estado.is_(None)))
+            .where(or_(
+                Visita.estado == "confirmada",
+                Visita.estado == "completada",
+                Visita.estado.is_(None),
+            ))
             .order_by(Visita.fecha.asc(), Visita.hora.asc())
         )
         visitas = result.scalars().all()
@@ -685,6 +689,7 @@ async def obtener_visitas_proximas() -> list[dict]:
         return [
             {"id": v.id, "telefono": v.telefono, "nombre": v.nombre,
              "fecha": v.fecha, "hora": v.hora, "notas": v.notas,
+             "estado": v.estado or "confirmada",
              "pasada": bool(v.fecha and v.fecha < hoy)}
             for v in ordenadas
         ]
@@ -696,6 +701,16 @@ async def cancelar_visita(visita_id: int) -> None:
         v = result.scalar_one_or_none()
         if v:
             v.estado = "cancelada"
+            await session.commit()
+
+
+async def completar_visita(visita_id: int) -> None:
+    """Marca una visita como realizada."""
+    async with async_session() as session:
+        result = await session.execute(select(Visita).where(Visita.id == visita_id))
+        v = result.scalar_one_or_none()
+        if v:
+            v.estado = "completada"
             await session.commit()
 
 

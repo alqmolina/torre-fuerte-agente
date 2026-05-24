@@ -35,6 +35,7 @@ from agent.memory import (
     obtener_visitas_lead,
     obtener_visitas_proximas,
     cancelar_visita,
+    completar_visita,
     obtener_idioma,
     Handoff,
     async_session,
@@ -1120,11 +1121,46 @@ async def admin_visitas(request: Request):
     filas = ""
     for v in visitas:
         fecha_fmt = _fmt_fecha(v["fecha"])
+        estado_v = v.get("estado", "confirmada")
         pasada = v.get("pasada", False)
-        borde = "#aaa" if pasada else "#27ae60"
-        color_fecha = "#aaa" if pasada else "#27ae60"
-        opacidad = "opacity:0.65;" if pasada else ""
-        etiqueta = '<span style="background:#f0f4f8;color:#888;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:600;margin-left:8px">PASADA</span>' if pasada else ""
+        completada = estado_v == "completada"
+
+        if completada:
+            borde = "#1a7a4a"
+            color_fecha = "#1a7a4a"
+            opacidad = "opacity:0.75;"
+            etiqueta = '<span style="background:#d4edda;color:#155724;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:700;margin-left:8px">✓ REALIZADA</span>'
+        elif pasada:
+            borde = "#aaa"
+            color_fecha = "#aaa"
+            opacidad = "opacity:0.65;"
+            etiqueta = '<span style="background:#f0f4f8;color:#888;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:600;margin-left:8px">PASADA</span>'
+        else:
+            borde = "#27ae60"
+            color_fecha = "#27ae60"
+            opacidad = ""
+            etiqueta = ""
+
+        btn_completar = ""
+        if not completada:
+            btn_completar = (
+                f'<form method="post" action="/admin/visita/{v["id"]}/completar" style="margin:0">'
+                f'<button type="submit" onclick="return confirm(\'¿Marcar esta visita como realizada?\')" '
+                f'style="background:#d4edda;color:#155724;border:1px solid #c3e6cb;border-radius:6px;'
+                f'padding:6px 12px;font-size:12px;cursor:pointer;width:100%;white-space:nowrap">✓ Realizada</button>'
+                f'</form>'
+            )
+
+        btn_cancelar = ""
+        if not completada:
+            btn_cancelar = (
+                f'<form method="post" action="/admin/visita/{v["id"]}/cancelar" style="margin:0">'
+                f'<button type="submit" onclick="return confirm(\'¿Cancelar esta visita?\')" '
+                f'style="background:#fde8e8;color:#c0392b;border:1px solid #f5b7b1;border-radius:6px;'
+                f'padding:6px 12px;font-size:12px;cursor:pointer;width:100%;white-space:nowrap">Cancelar</button>'
+                f'</form>'
+            )
+
         filas += (
             f'<div style="background:white;border-radius:10px;padding:14px 16px;margin-bottom:10px;'
             f'box-shadow:0 1px 4px rgba(0,0,0,0.08);border-left:4px solid {borde};{opacidad}">'
@@ -1138,16 +1174,13 @@ async def admin_visitas(request: Request):
             f'<div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">'
             f'<a href="/admin/chat/{_esc(v["telefono"])}" style="background:#1a3c5e;color:white;border-radius:6px;'
             f'padding:6px 12px;font-size:12px;text-decoration:none;font-weight:600;white-space:nowrap">Ver chat</a>'
-            f'<form method="post" action="/admin/visita/{v["id"]}/cancelar" style="margin:0">'
-            f'<button type="submit" onclick="return confirm(\'¿Cancelar esta visita?\')" '
-            f'style="background:#fde8e8;color:#c0392b;border:1px solid #f5b7b1;border-radius:6px;'
-            f'padding:6px 12px;font-size:12px;cursor:pointer;width:100%;white-space:nowrap">Cancelar</button>'
-            f'</form>'
+            f'{btn_completar}'
+            f'{btn_cancelar}'
             f'</div></div></div>'
         )
 
     if not filas:
-        filas = '<div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:40px;margin-bottom:12px">📅</div><p>Sin visitas confirmadas aún</p></div>'
+        filas = '<div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:40px;margin-bottom:12px">📅</div><p>Sin visitas registradas aún</p></div>'
 
     return f"""<!DOCTYPE html>
 <html lang="es">
@@ -1318,6 +1351,15 @@ async def visita_cancelar(visita_id: int, request: Request):
     if not _autenticado(request):
         return RedirectResponse("/admin/login", status_code=302)
     await cancelar_visita(visita_id)
+    referer = request.headers.get("referer", "/admin/visitas")
+    return RedirectResponse(referer, status_code=303)
+
+
+@router.post("/visita/{visita_id}/completar")
+async def visita_completar(visita_id: int, request: Request):
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
+    await completar_visita(visita_id)
     referer = request.headers.get("referer", "/admin/visitas")
     return RedirectResponse(referer, status_code=303)
 
