@@ -4,7 +4,7 @@ import os
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import String, Text, DateTime, select, Integer, Boolean, func, distinct
+from sqlalchemy import String, Text, DateTime, select, Integer, Boolean, func, distinct, or_
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -630,12 +630,15 @@ async def obtener_metricas() -> dict:
 # ── Visitas ───────────────────────────────────────────────────────────────────
 
 async def guardar_visita(telefono: str, nombre: str, fecha: str, hora: str, notas: str = "") -> int:
+    import logging
+    logger = logging.getLogger("agentkit")
     async with async_session() as session:
         v = Visita(telefono=telefono, nombre=nombre, fecha=fecha, hora=hora,
                    notas=notas, estado="confirmada", creado_at=datetime.utcnow())
         session.add(v)
         await session.commit()
         await session.refresh(v)
+        logger.info(f"guardar_visita: id={v.id} tel={telefono} fecha={fecha} estado={v.estado!r}")
         return v.id
 
 
@@ -652,23 +655,27 @@ async def obtener_visitas_lead(telefono: str) -> list[dict]:
 
 
 async def obtener_visitas_proximas() -> list[dict]:
-    """Todas las visitas confirmadas ordenadas por fecha (próximas primero, pasadas al final)."""
+    """Todas las visitas no-canceladas ordenadas por fecha (próximas primero, pasadas al final)."""
+    import logging
+    logger = logging.getLogger("agentkit")
     hoy = (datetime.utcnow() + _COL).strftime("%Y-%m-%d")
     async with async_session() as session:
         result = await session.execute(
             select(Visita)
-            .where(Visita.estado == "confirmada")
+            .where(or_(Visita.estado == "confirmada", Visita.estado.is_(None)))
             .order_by(Visita.fecha.asc(), Visita.hora.asc())
         )
         visitas = result.scalars().all()
-        proximas = [v for v in visitas if v.fecha >= hoy]
-        pasadas  = [v for v in visitas if v.fecha < hoy]
-        # Próximas primero, luego las pasadas en orden inverso (más reciente arriba)
+        logger.info(f"obtener_visitas_proximas: {len(visitas)} visitas encontradas (estado=confirmada o NULL)")
+        for v in visitas:
+            logger.info(f"  visita id={v.id} tel={v.telefono} fecha={v.fecha} estado={v.estado!r}")
+        proximas = [v for v in visitas if v.fecha and v.fecha >= hoy]
+        pasadas  = [v for v in visitas if v.fecha and v.fecha < hoy]
         ordenadas = proximas + list(reversed(pasadas))
         return [
             {"id": v.id, "telefono": v.telefono, "nombre": v.nombre,
              "fecha": v.fecha, "hora": v.hora, "notas": v.notas,
-             "pasada": v.fecha < hoy}
+             "pasada": bool(v.fecha and v.fecha < hoy)}
             for v in ordenadas
         ]
 
