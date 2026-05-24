@@ -164,6 +164,19 @@ async def generar_respuesta(mensaje: str, historial: list[dict], perfil: dict | 
             "Example: [LEAD:John Smith||D-401|3|warm|investment][HANDOFF:requested_by_user]\n"
             "Only emit [HANDOFF] once per conversation. Never emit it in the middle of a message."
         )
+        system_prompt += (
+            "\n\n## Visit scheduling\n"
+            "When the lead CONFIRMS a specific date and time to visit the project, add at the END of your response:\n"
+            "`[VISITA:lead_name|YYYY-MM-DD|HH:MM|optional_notes]`\n"
+            "Example: `[VISITA:John Smith|2026-05-28|10:00|Interested in D-401 3-bedroom]`\n"
+            "Rules:\n"
+            "- Only emit [VISITA] when the lead has confirmed BOTH a specific date AND a specific time.\n"
+            "- Convert any date the lead mentions to YYYY-MM-DD format (e.g. 'next Tuesday May 27' → 2026-05-27).\n"
+            "- Convert time to 24h HH:MM format (e.g. '3pm' → 15:00).\n"
+            "- Use the lead's name if known, otherwise 'Lead'.\n"
+            "- Do NOT emit [VISITA] just because the lead expressed interest in visiting — only when they confirm a specific date/time.\n"
+            "- Never emit [VISITA] more than once per confirmed appointment."
+        )
     else:
         system_prompt += (
             "\n\n## Idioma\n"
@@ -180,6 +193,19 @@ async def generar_respuesta(mensaje: str, historial: list[dict], perfil: dict | 
             "con toda la info que tengas (deja campos vacíos si no los conoces). "
             "Ejemplo: [LEAD:Juan Pérez||D-401|3|caliente|vivir][HANDOFF:solicitado_por_usuario]\n"
             "Solo emite [HANDOFF] una vez por conversación. Nunca en medio del texto."
+        )
+        system_prompt += (
+            "\n\n## Agendamiento de visitas\n"
+            "Cuando el lead CONFIRME una fecha y hora específicas para visitar el proyecto, agrega AL FINAL de tu respuesta:\n"
+            "`[VISITA:nombre_lead|YYYY-MM-DD|HH:MM|notas_opcionales]`\n"
+            "Ejemplo: `[VISITA:Juan Pérez|2026-05-28|10:00|Interesado en D-401 de 3 habitaciones]`\n"
+            "Reglas:\n"
+            "- Solo emite [VISITA] cuando el lead haya confirmado TANTO una fecha específica COMO una hora específica.\n"
+            "- Convierte cualquier fecha que mencione el lead a formato YYYY-MM-DD (ej: 'el martes 27' → 2026-05-27).\n"
+            "- Convierte la hora a formato HH:MM en 24h (ej: '3pm' → 15:00, '10am' → 10:00).\n"
+            "- Usa el nombre del lead si lo conoces, si no usa 'Lead'.\n"
+            "- NO emitas [VISITA] solo porque el lead expresó interés en visitar — solo cuando confirme fecha Y hora.\n"
+            "- No emitas [VISITA] más de una vez por cita confirmada."
         )
 
     # Inyectar precios de apartamentos para que Claude pueda llamar la calculadora

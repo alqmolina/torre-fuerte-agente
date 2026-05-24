@@ -215,6 +215,26 @@ def extraer_marcador_handoff(texto: str) -> tuple[str, str | None]:
     return texto_limpio, razon
 
 
+def extraer_marcador_visita(texto: str) -> tuple[str, dict | None]:
+    """Extrae [VISITA:nombre|YYYY-MM-DD|HH:MM|notas] del texto.
+
+    Retorna (texto_limpio, dict con keys nombre/fecha/hora/notas) o (texto, None).
+    """
+    patron = re.compile(r'\[VISITA:([^\]]+)\]', re.IGNORECASE)
+    m = patron.search(texto)
+    if not m:
+        return texto, None
+    partes = [p.strip() for p in m.group(1).split("|")]
+    if len(partes) < 3:
+        return patron.sub("", texto).strip(), None
+    nombre = partes[0] or "Lead"
+    fecha = partes[1]
+    hora = partes[2]
+    notas = partes[3] if len(partes) > 3 else ""
+    texto_limpio = patron.sub("", texto).strip()
+    return texto_limpio, {"nombre": nombre, "fecha": fecha, "hora": hora, "notas": notas}
+
+
 def enviar_email_handoff(
     telefono: str,
     nombre: str,

@@ -22,6 +22,7 @@ from agent.memory import (
     obtener_leads_pendientes_handoff,
     mensaje_ya_procesado, marcar_mensaje_procesado,
     obtener_leads_para_seguimiento, registrar_seguimiento,
+    guardar_visita,
 )
 import agent.admin as admin_module
 from agent.tools import (
@@ -29,6 +30,7 @@ from agent.tools import (
     extraer_marcadores_render,
     extraer_marcador_lead,
     extraer_marcador_handoff,
+    extraer_marcador_visita,
     obtener_plano,
     obtener_urls_renders,
     enviar_email_lead,
@@ -363,7 +365,8 @@ async def webhook_handler(request: Request):
             texto_sin_planos, codigos_plano = extraer_marcadores_plano(respuesta_raw)
             texto_sin_renders, claves_render = extraer_marcadores_render(texto_sin_planos)
             texto_sin_lead, lead_data = extraer_marcador_lead(texto_sin_renders)
-            texto_limpio, razon_handoff = extraer_marcador_handoff(texto_sin_lead)
+            texto_sin_visita, visita_data = extraer_marcador_visita(texto_sin_lead)
+            texto_limpio, razon_handoff = extraer_marcador_handoff(texto_sin_visita)
 
             # Anotar en el historial qué media se envió para que Claude no lo repita
             texto_a_guardar = texto_limpio
@@ -422,6 +425,24 @@ async def webhook_handler(request: Request):
                 logger.info(f"Lead registrado: {lead_data['nombre']} ({msg.telefono})")
                 todos_los_leads = await obtener_todos_los_leads()
                 exportar_leads_excel(todos_los_leads)
+
+            # Visita: Claude emitió [VISITA] → guardar en BD
+            if visita_data:
+                nombre_v = visita_data["nombre"]
+                # Preferir el nombre del perfil si ya está registrado
+                if perfil and perfil.get("nombre"):
+                    nombre_v = perfil["nombre"]
+                await guardar_visita(
+                    msg.telefono,
+                    nombre_v,
+                    visita_data["fecha"],
+                    visita_data["hora"],
+                    visita_data["notas"],
+                )
+                logger.info(
+                    f"Visita auto-agendada: {nombre_v} ({msg.telefono}) "
+                    f"{visita_data['fecha']} {visita_data['hora']}"
+                )
 
             # Handoff: Claude emitió [HANDOFF] → transferir a asesor
             if razon_handoff and not await esta_en_handoff(msg.telefono):
