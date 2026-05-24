@@ -259,23 +259,25 @@ async def admin_index(request: Request):
             nombre_esc = _esc(h["nombre"])
             ultimo_esc = _esc(h["ultimo_mensaje"])
             role_label = "Bot" if h["ultimo_mensaje_role"] == "assistant" else "Lead"
+            tel = h["telefono"]
             cards += f"""
-            <a href="/admin/chat/{h['telefono']}" style="text-decoration:none;color:inherit;display:block">
-              <div class="card {temp_class}">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-                  <span style="font-weight:600;font-size:16px">{nombre_esc}</span>
-                  <span class="badge badge-{temp_class}">{icono} {_esc(h['temperatura']).upper()}</span>
-                </div>
-                <div style="color:#666;font-size:13px;margin-bottom:6px">📱 {_esc(h['telefono'])}</div>
-                <div style="color:#555;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
-                  <span style="color:#999;font-size:12px">[{role_label}]</span> {ultimo_esc}
-                </div>
-                <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:12px;color:#999">
-                  <span>🏠 {_esc(h['apto']) or 'Apto no especificado'}</span>
-                  <span>{_esc(h['ultimo_mensaje_tiempo'])}</span>
-                </div>
+            <div class="card {temp_class}" onclick="location.href='/admin/chat/{tel}'" style="cursor:pointer">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                <span style="font-weight:600;font-size:16px">{nombre_esc}</span>
+                <span class="badge badge-{temp_class}">{icono} {_esc(h['temperatura']).upper()}</span>
               </div>
-            </a>"""
+              <div style="color:#666;font-size:13px;margin-bottom:6px">📱 {_esc(tel)}</div>
+              <div style="color:#555;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                <span style="color:#999;font-size:12px">[{role_label}]</span> {ultimo_esc}
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
+                <span style="font-size:12px;color:#999">🏠 {_esc(h['apto']) or 'Apto no especificado'} · {_esc(h['ultimo_mensaje_tiempo'])}</span>
+                <a href="/admin/visita/{tel}" onclick="event.stopPropagation()"
+                   style="font-size:12px;font-weight:600;color:#e67e22;text-decoration:none;background:#fff3e0;border:1px solid #f0c060;border-radius:6px;padding:4px 10px;white-space:nowrap">
+                  📅 Visita
+                </a>
+              </div>
+            </div>"""
         content = cards
 
     return f"""<!DOCTYPE html>
