@@ -56,6 +56,18 @@ def _ejecutar_herramienta(nombre: str, params: dict) -> str:
     return f"Herramienta '{nombre}' no encontrada."
 
 
+def _content_a_dicts(content: list) -> list:
+    """Convierte content blocks del SDK (objetos Pydantic) a dicts planos para la API."""
+    result = []
+    for block in content:
+        t = getattr(block, "type", None)
+        if t == "text":
+            result.append({"type": "text", "text": block.text})
+        elif t == "tool_use":
+            result.append({"type": "tool_use", "id": block.id, "name": block.name, "input": block.input})
+    return result
+
+
 def cargar_config_prompts() -> dict:
     """Lee toda la configuración desde config/prompts.yaml."""
     try:
@@ -235,14 +247,14 @@ async def generar_respuesta(mensaje: str, historial: list[dict], perfil: dict | 
             if tool_block:
                 resultado = _ejecutar_herramienta(tool_block.name, tool_block.input)
                 logger.info(f"Tool use: {tool_block.name}({tool_block.input}) → {resultado[:80]}")
-                mensajes.append({"role": "assistant", "content": response.content})
+                mensajes.append({"role": "assistant", "content": _content_a_dicts(response.content)})
                 mensajes.append({
                     "role": "user",
                     "content": [{"type": "tool_result", "tool_use_id": tool_block.id, "content": resultado}],
                 })
                 response = await client.messages.create(
                     model="claude-sonnet-4-6",
-                    max_tokens=1024,
+                    max_tokens=1536,
                     system=system_prompt,
                     messages=mensajes,
                     tools=_TOOLS,
@@ -255,5 +267,5 @@ async def generar_respuesta(mensaje: str, historial: list[dict], perfil: dict | 
         return respuesta
 
     except Exception as e:
-        logger.error(f"Error Claude API: {e}")
+        logger.error(f"Error Claude API [{type(e).__name__}]: {e}")
         return obtener_mensaje_error()
