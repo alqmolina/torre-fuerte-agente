@@ -45,14 +45,77 @@ _TOOLS = [
             },
             "required": ["precio_cop", "entrada_pct", "plazo_anos", "tasa_anual_pct"],
         },
-    }
+    },
+    {
+        "name": "verificar_disponibilidad_visita",
+        "description": (
+            "Verifica si una fecha y hora están disponibles para agendar una visita al proyecto. "
+            "DEBES llamar esta herramienta SIEMPRE que el lead proponga una fecha (con o sin hora) "
+            "para visitar o llamar. Si el slot ya está ocupado, la herramienta te indica los "
+            "horarios tomados para que ofrezcas alternativas. "
+            "Nunca confirmes una cita sin llamar primero esta herramienta."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "fecha": {
+                    "type": "string",
+                    "description": "Fecha propuesta en formato YYYY-MM-DD",
+                },
+                "hora": {
+                    "type": "string",
+                    "description": "Hora propuesta en formato HH:MM (24h). Opcional si solo propone fecha.",
+                },
+            },
+            "required": ["fecha"],
+        },
+    },
 ]
 
 
-def _ejecutar_herramienta(nombre: str, params: dict) -> str:
+def _hora_a_minutos(hora: str) -> int:
+    try:
+        h, m = hora.split(":")
+        return int(h) * 60 + int(m)
+    except Exception:
+        return -1
+
+
+async def _ejecutar_herramienta(nombre: str, params: dict) -> str:
     if nombre == "calcular_hipoteca":
         from agent.tools import calcular_hipoteca
         return calcular_hipoteca(**params)
+    if nombre == "verificar_disponibilidad_visita":
+        from agent.memory import obtener_visitas_proximas
+        fecha = params.get("fecha", "").strip()
+        hora = params.get("hora", "").strip()
+        if not fecha:
+            return "Fecha no especificada. Pide al lead que indique una fecha válida."
+        visitas = await obtener_visitas_proximas()
+        ese_dia = [v for v in visitas if v["fecha"] == fecha]
+        if not ese_dia:
+            if hora:
+                return f"Disponible: el {fecha} a las {hora} no tiene visitas agendadas. Puedes confirmar la cita."
+            return f"El {fecha} está completamente libre. No hay visitas agendadas ese día."
+        horas_ocupadas = sorted(v["hora"] for v in ese_dia)
+        if hora:
+            prop_min = _hora_a_minutos(hora)
+            conflicto = any(
+                abs(prop_min - _hora_a_minutos(h)) < 60
+                for h in horas_ocupadas
+                if _hora_a_minutos(h) >= 0
+            )
+            if conflicto:
+                return (
+                    f"No disponible: el {fecha} a las {hora} hay una visita cercana ya agendada. "
+                    f"Horarios ocupados ese día: {', '.join(horas_ocupadas)}. "
+                    f"Informa al lead que ese horario no está disponible y pídele otra fecha u hora."
+                )
+            return f"Disponible: el {fecha} a las {hora} está libre. Puedes confirmar la cita."
+        return (
+            f"El {fecha} tiene estos horarios ya ocupados: {', '.join(horas_ocupadas)}. "
+            f"Pide al lead que elija un horario diferente (separados por al menos 1 hora)."
+        )
     return f"Herramienta '{nombre}' no encontrada."
 
 
@@ -166,15 +229,20 @@ async def generar_respuesta(mensaje: str, historial: list[dict], perfil: dict | 
         )
         system_prompt += (
             "\n\n## Visit scheduling\n"
-            "When the lead CONFIRMS a specific date and time to visit the project, add at the END of your response:\n"
-            "`[VISITA:lead_name|YYYY-MM-DD|HH:MM|optional_notes]`\n"
-            "Example: `[VISITA:John Smith|2026-05-28|10:00|Interested in D-401 3-bedroom]`\n"
+            "STEP 1 — Availability check (MANDATORY):\n"
+            "  Whenever the lead proposes a date (with or without a time), you MUST call "
+            "`verificar_disponibilidad_visita` BEFORE responding about that date.\n"
+            "  - If the result says the slot is NOT available: tell the lead that date/time is taken "
+            "and ask them to choose another one. Do NOT emit [VISITA].\n"
+            "  - If the result says the slot IS available: proceed to confirm and emit [VISITA].\n\n"
+            "STEP 2 — Confirm and tag:\n"
+            "  When the lead has confirmed an available date AND time, add at the END of your response:\n"
+            "  `[VISITA:lead_name|YYYY-MM-DD|HH:MM|optional_notes]`\n"
+            "  Example: `[VISITA:John Smith|2026-05-28|10:00|Interested in D-401 3-bedroom]`\n\n"
             "Rules:\n"
-            "- Only emit [VISITA] when the lead has confirmed BOTH a specific date AND a specific time.\n"
-            "- Convert any date the lead mentions to YYYY-MM-DD format (e.g. 'next Tuesday May 27' → 2026-05-27).\n"
-            "- Convert time to 24h HH:MM format (e.g. '3pm' → 15:00).\n"
+            "- Convert dates to YYYY-MM-DD (e.g. 'next Tuesday May 27' → 2026-05-27).\n"
+            "- Convert times to 24h HH:MM (e.g. '3pm' → 15:00).\n"
             "- Use the lead's name if known, otherwise 'Lead'.\n"
-            "- Do NOT emit [VISITA] just because the lead expressed interest in visiting — only when they confirm a specific date/time.\n"
             "- Never emit [VISITA] more than once per confirmed appointment."
         )
     else:
@@ -196,15 +264,20 @@ async def generar_respuesta(mensaje: str, historial: list[dict], perfil: dict | 
         )
         system_prompt += (
             "\n\n## Agendamiento de visitas\n"
-            "Cuando el lead CONFIRME una fecha y hora específicas para visitar el proyecto, agrega AL FINAL de tu respuesta:\n"
-            "`[VISITA:nombre_lead|YYYY-MM-DD|HH:MM|notas_opcionales]`\n"
-            "Ejemplo: `[VISITA:Juan Pérez|2026-05-28|10:00|Interesado en D-401 de 3 habitaciones]`\n"
+            "PASO 1 — Verificar disponibilidad (OBLIGATORIO):\n"
+            "  Cada vez que el lead proponga una fecha (con o sin hora), DEBES llamar "
+            "`verificar_disponibilidad_visita` ANTES de responder sobre esa fecha.\n"
+            "  - Si el resultado dice que el horario NO está disponible: informa al lead que esa "
+            "fecha/hora ya está ocupada y pídele que elija otra. NO emitas [VISITA].\n"
+            "  - Si el resultado dice que el horario SÍ está disponible: procede a confirmar y emite [VISITA].\n\n"
+            "PASO 2 — Confirmar y etiquetar:\n"
+            "  Cuando el lead haya confirmado una fecha Y hora disponibles, agrega AL FINAL de tu respuesta:\n"
+            "  `[VISITA:nombre_lead|YYYY-MM-DD|HH:MM|notas_opcionales]`\n"
+            "  Ejemplo: `[VISITA:Juan Pérez|2026-05-28|10:00|Interesado en D-401 de 3 habitaciones]`\n\n"
             "Reglas:\n"
-            "- Solo emite [VISITA] cuando el lead haya confirmado TANTO una fecha específica COMO una hora específica.\n"
-            "- Convierte cualquier fecha que mencione el lead a formato YYYY-MM-DD (ej: 'el martes 27' → 2026-05-27).\n"
-            "- Convierte la hora a formato HH:MM en 24h (ej: '3pm' → 15:00, '10am' → 10:00).\n"
+            "- Convierte fechas a YYYY-MM-DD (ej: 'el martes 27' → 2026-05-27).\n"
+            "- Convierte la hora a HH:MM en 24h (ej: '3pm' → 15:00, '10am' → 10:00).\n"
             "- Usa el nombre del lead si lo conoces, si no usa 'Lead'.\n"
-            "- NO emitas [VISITA] solo porque el lead expresó interés en visitar — solo cuando confirme fecha Y hora.\n"
             "- No emitas [VISITA] más de una vez por cita confirmada."
         )
 
@@ -302,7 +375,7 @@ async def generar_respuesta(mensaje: str, historial: list[dict], perfil: dict | 
             mensajes.append({"role": "assistant", "content": _content_a_dicts(response.content)})
             resultados = []
             for tb in tool_blocks:
-                resultado = _ejecutar_herramienta(tb.name, tb.input)
+                resultado = await _ejecutar_herramienta(tb.name, tb.input)
                 logger.info(f"Tool use: {tb.name}({tb.input}) → {resultado[:80]}")
                 resultados.append({"type": "tool_result", "tool_use_id": tb.id, "content": resultado})
             mensajes.append({"role": "user", "content": resultados})
