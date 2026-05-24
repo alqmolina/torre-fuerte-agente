@@ -652,18 +652,24 @@ async def obtener_visitas_lead(telefono: str) -> list[dict]:
 
 
 async def obtener_visitas_proximas() -> list[dict]:
-    """Visitas a partir de hoy, ordenadas por fecha."""
+    """Todas las visitas confirmadas ordenadas por fecha (próximas primero, pasadas al final)."""
     hoy = (datetime.utcnow() + _COL).strftime("%Y-%m-%d")
     async with async_session() as session:
         result = await session.execute(
             select(Visita)
-            .where(Visita.fecha >= hoy, Visita.estado == "confirmada")
+            .where(Visita.estado == "confirmada")
             .order_by(Visita.fecha.asc(), Visita.hora.asc())
         )
+        visitas = result.scalars().all()
+        proximas = [v for v in visitas if v.fecha >= hoy]
+        pasadas  = [v for v in visitas if v.fecha < hoy]
+        # Próximas primero, luego las pasadas en orden inverso (más reciente arriba)
+        ordenadas = proximas + list(reversed(pasadas))
         return [
             {"id": v.id, "telefono": v.telefono, "nombre": v.nombre,
-             "fecha": v.fecha, "hora": v.hora, "notas": v.notas}
-            for v in result.scalars().all()
+             "fecha": v.fecha, "hora": v.hora, "notas": v.notas,
+             "pasada": v.fecha < hoy}
+            for v in ordenadas
         ]
 
 

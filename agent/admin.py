@@ -1120,13 +1120,18 @@ async def admin_visitas(request: Request):
     filas = ""
     for v in visitas:
         fecha_fmt = _fmt_fecha(v["fecha"])
+        pasada = v.get("pasada", False)
+        borde = "#aaa" if pasada else "#27ae60"
+        color_fecha = "#aaa" if pasada else "#27ae60"
+        opacidad = "opacity:0.65;" if pasada else ""
+        etiqueta = '<span style="background:#f0f4f8;color:#888;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:600;margin-left:8px">PASADA</span>' if pasada else ""
         filas += (
             f'<div style="background:white;border-radius:10px;padding:14px 16px;margin-bottom:10px;'
-            f'box-shadow:0 1px 4px rgba(0,0,0,0.08);border-left:4px solid #27ae60">'
+            f'box-shadow:0 1px 4px rgba(0,0,0,0.08);border-left:4px solid {borde};{opacidad}">'
             f'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">'
             f'<div>'
-            f'<div style="font-weight:600;font-size:15px;color:#1a3c5e">{_esc(v["nombre"] or "Sin nombre")}</div>'
-            f'<div style="font-size:13px;color:#27ae60;font-weight:600;margin-top:4px">📅 {_esc(fecha_fmt)} · ⏰ {_esc(v["hora"])}</div>'
+            f'<div style="font-weight:600;font-size:15px;color:#1a3c5e">{_esc(v["nombre"] or "Sin nombre")}{etiqueta}</div>'
+            f'<div style="font-size:13px;color:{color_fecha};font-weight:600;margin-top:4px">📅 {_esc(fecha_fmt)} · ⏰ {_esc(v["hora"])}</div>'
             + (f'<div style="font-size:13px;color:#666;margin-top:4px">{_esc(v["notas"])}</div>' if v["notas"] else '')
             + f'<div style="font-size:12px;color:#999;margin-top:4px">📱 {_esc(v["telefono"])}</div>'
             f'</div>'
@@ -1142,7 +1147,7 @@ async def admin_visitas(request: Request):
         )
 
     if not filas:
-        filas = '<div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:40px;margin-bottom:12px">📅</div><p>No hay visitas próximas confirmadas</p></div>'
+        filas = '<div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:40px;margin-bottom:12px">📅</div><p>Sin visitas confirmadas aún</p></div>'
 
     return f"""<!DOCTYPE html>
 <html lang="es">
