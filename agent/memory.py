@@ -856,6 +856,102 @@ async def obtener_notas(telefono: str) -> list[dict]:
         ]
 
 
+# ── Historial de actividad ────────────────────────────────────────────────────
+
+async def obtener_actividad_lead(telefono: str) -> list[dict]:
+    """Retorna timeline de eventos clave de un lead, ordenados cronológicamente desc."""
+    eventos: list[dict] = []
+
+    async with async_session() as session:
+        # Registro del lead
+        lead = await session.scalar(select(Lead).where(Lead.telefono == telefono))
+        if lead and lead.fecha:
+            eventos.append({
+                "tipo": "registro", "fecha": lead.fecha,
+                "icono": "👤", "color": "#1a3c5e",
+                "titulo": "Lead registrado",
+                "detalle": f"{lead.nombre} · {lead.temperatura.upper() if lead.temperatura else 'sin temperatura'}",
+            })
+
+        # Visitas
+        res = await session.execute(
+            select(Visita).where(Visita.telefono == telefono).order_by(Visita.creado_at.asc())
+        )
+        for v in res.scalars().all():
+            estado = v.estado or "confirmada"
+            icono = {"confirmada": "📅", "completada": "✅", "cancelada": "❌"}.get(estado, "📅")
+            color = {"confirmada": "#27ae60", "completada": "#1a7a4a", "cancelada": "#c0392b"}.get(estado, "#27ae60")
+            titulo = {"confirmada": "Visita agendada", "completada": "Visita realizada", "cancelada": "Visita cancelada"}.get(estado, "Visita")
+            eventos.append({
+                "tipo": "visita", "fecha": v.creado_at or datetime.utcnow(),
+                "icono": icono, "color": color,
+                "titulo": titulo,
+                "detalle": f"{v.fecha} a las {v.hora}" + (f" · {v.notas}" if v.notas else ""),
+            })
+
+        # Handoff
+        handoff = await session.scalar(select(Handoff).where(Handoff.telefono == telefono))
+        if handoff and handoff.timestamp:
+            eventos.append({
+                "tipo": "handoff", "fecha": handoff.timestamp,
+                "icono": "🔔", "color": "#e67e22",
+                "titulo": "Transferencia a asesor",
+                "detalle": handoff.razon or "",
+            })
+
+        # Seguimientos enviados
+        res = await session.execute(
+            select(SeguimientoLead).where(SeguimientoLead.telefono == telefono).order_by(SeguimientoLead.enviado_at.asc())
+        )
+        for s in res.scalars().all():
+            eventos.append({
+                "tipo": "seguimiento", "fecha": s.enviado_at,
+                "icono": "📲", "color": "#8e44ad",
+                "titulo": f"Seguimiento #{s.numero} enviado",
+                "detalle": "",
+            })
+
+        # Notas del asesor
+        res = await session.execute(
+            select(NotaLead).where(NotaLead.telefono == telefono).order_by(NotaLead.creado_at.asc())
+        )
+        for n in res.scalars().all():
+            eventos.append({
+                "tipo": "nota", "fecha": n.creado_at,
+                "icono": "📝", "color": "#2980b9",
+                "titulo": "Nota del asesor",
+                "detalle": n.texto[:300] + ("…" if len(n.texto) > 300 else ""),
+            })
+
+        # Primer y último mensaje (para mostrar inicio y actividad reciente)
+        primer = await session.scalar(
+            select(func.min(Mensaje.timestamp)).where(Mensaje.telefono == telefono)
+        )
+        ultimo = await session.scalar(
+            select(func.max(Mensaje.timestamp)).where(Mensaje.telefono == telefono)
+        )
+        total_msgs = await session.scalar(
+            select(func.count(Mensaje.id)).where(Mensaje.telefono == telefono)
+        )
+        if primer:
+            eventos.append({
+                "tipo": "mensaje", "fecha": primer,
+                "icono": "💬", "color": "#7f8c8d",
+                "titulo": "Primera conversación",
+                "detalle": f"{total_msgs or 0} mensajes en total",
+            })
+        if ultimo and ultimo != primer:
+            eventos.append({
+                "tipo": "mensaje", "fecha": ultimo,
+                "icono": "💬", "color": "#7f8c8d",
+                "titulo": "Último mensaje",
+                "detalle": "",
+            })
+
+    eventos.sort(key=lambda x: x["fecha"] or datetime.min, reverse=True)
+    return eventos
+
+
 # ── Broadcast ─────────────────────────────────────────────────────────────────
 
 async def obtener_leads_filtrados(

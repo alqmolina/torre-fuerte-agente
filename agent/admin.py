@@ -38,6 +38,7 @@ from agent.memory import (
     completar_visita,
     obtener_idioma,
     buscar_leads,
+    obtener_actividad_lead,
     Handoff,
     async_session,
 )
@@ -477,6 +478,11 @@ async def admin_chat(telefono: str, request: Request):
        style="background:rgba(255,255,255,0.15);color:white;border:1px solid rgba(255,255,255,0.3);
               padding:6px 12px;border-radius:20px;font-size:12px;text-decoration:none;white-space:nowrap">
       ✏️ Editar
+    </a>
+    <a href="/admin/lead/{tel_esc}/historial"
+       style="background:rgba(255,255,255,0.15);color:white;border:1px solid rgba(255,255,255,0.3);
+              padding:6px 12px;border-radius:20px;font-size:12px;text-decoration:none;white-space:nowrap">
+      📋 Historial
     </a>
     <form method="post" action="/admin/close/{tel_esc}" style="margin:0">
       <button type="submit" class="close-btn"
@@ -1485,6 +1491,74 @@ async def visita_completar(visita_id: int, request: Request):
     await completar_visita(visita_id)
     referer = request.headers.get("referer", "/admin/visitas")
     return RedirectResponse(referer, status_code=303)
+
+
+@router.get("/lead/{telefono}/historial", response_class=HTMLResponse)
+async def lead_historial(telefono: str, request: Request):
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
+
+    perfil = await obtener_perfil_lead(telefono)
+    nombre = perfil.get("nombre", telefono) if perfil else telefono
+    eventos = await obtener_actividad_lead(telefono)
+    tel_esc = _esc(telefono)
+
+    _TIPOS_COLOR = {
+        "registro": "#1a3c5e", "visita": "#27ae60", "handoff": "#e67e22",
+        "seguimiento": "#8e44ad", "nota": "#2980b9", "mensaje": "#7f8c8d",
+    }
+
+    items = ""
+    for ev in eventos:
+        color = ev.get("color", "#888")
+        fecha_fmt = _col(ev["fecha"]) if ev.get("fecha") else "—"
+        detalle_html = f'<div style="font-size:12px;color:#666;margin-top:3px">{_esc(ev["detalle"])}</div>' if ev.get("detalle") else ""
+        items += (
+            f'<div style="display:flex;gap:14px;margin-bottom:16px">'
+            f'<div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0">'
+            f'<div style="width:34px;height:34px;border-radius:50%;background:{color}22;border:2px solid {color};'
+            f'display:flex;align-items:center;justify-content:center;font-size:16px">{ev["icono"]}</div>'
+            f'<div style="flex:1;width:2px;background:#e5e7eb;margin:4px 0"></div>'
+            f'</div>'
+            f'<div style="flex:1;padding-top:4px">'
+            f'<div style="font-weight:600;font-size:14px;color:#1a3c5e">{_esc(ev["titulo"])}</div>'
+            f'{detalle_html}'
+            f'<div style="font-size:11px;color:#aaa;margin-top:3px">{_esc(fecha_fmt)}</div>'
+            f'</div></div>'
+        )
+
+    if not items:
+        items = '<div style="text-align:center;padding:40px;color:#aaa"><p>Sin actividad registrada</p></div>'
+
+    return f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Historial — {_esc(nombre)}</title>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; }}
+    .header {{ background: #1a3c5e; color: white; padding: 16px 20px; display: flex; align-items: center; gap: 12px; }}
+    .container {{ max-width: 600px; margin: 0 auto; padding: 20px 16px; }}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/admin/chat/{tel_esc}" style="color:white;text-decoration:none;font-size:20px">←</a>
+    <div style="flex:1">
+      <div style="font-size:18px;font-weight:600">{_esc(nombre)} · Historial</div>
+      <div style="font-size:12px;opacity:0.7">{len(eventos)} evento{"s" if len(eventos)!=1 else ""} registrado{"s" if len(eventos)!=1 else ""}</div>
+    </div>
+    <a href="/admin/chat/{tel_esc}" style="color:rgba(255,255,255,0.7);font-size:12px;text-decoration:none">Ver chat</a>
+  </div>
+  <div class="container">
+    <div style="background:white;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.07)">
+      {items}
+    </div>
+  </div>
+</body>
+</html>"""
 
 
 @router.get("/lead/{telefono}/editar", response_class=HTMLResponse)
