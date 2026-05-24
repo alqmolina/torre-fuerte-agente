@@ -22,7 +22,7 @@ from agent.memory import (
     obtener_leads_pendientes_handoff,
     mensaje_ya_procesado, marcar_mensaje_procesado,
     obtener_leads_para_seguimiento, registrar_seguimiento,
-    guardar_visita, cancelar_visita,
+    guardar_visita, cancelar_visita, reagendar_visita,
     obtener_visitas_para_recordatorio, marcar_recordatorio,
 )
 import agent.admin as admin_module
@@ -33,6 +33,7 @@ from agent.tools import (
     extraer_marcador_handoff,
     extraer_marcador_visita,
     extraer_marcador_cancelar_visita,
+    extraer_marcador_reagendar_visita,
     obtener_plano,
     obtener_urls_renders,
     enviar_email_lead,
@@ -440,7 +441,8 @@ async def webhook_handler(request: Request):
             texto_sin_lead, lead_data = extraer_marcador_lead(texto_sin_renders)
             texto_sin_visita, visita_data = extraer_marcador_visita(texto_sin_lead)
             texto_sin_cancelar, cancelar_visita_id = extraer_marcador_cancelar_visita(texto_sin_visita)
-            texto_limpio, razon_handoff = extraer_marcador_handoff(texto_sin_cancelar)
+            texto_sin_reagendar, reagendar_data = extraer_marcador_reagendar_visita(texto_sin_cancelar)
+            texto_limpio, razon_handoff = extraer_marcador_handoff(texto_sin_reagendar)
 
             # Anotar en el historial qué media se envió para que Claude no lo repita
             texto_a_guardar = texto_limpio
@@ -522,6 +524,11 @@ async def webhook_handler(request: Request):
             if cancelar_visita_id:
                 await cancelar_visita(cancelar_visita_id)
                 logger.info(f"Visita {cancelar_visita_id} cancelada via WhatsApp ({msg.telefono})")
+
+            # Reagendamiento de visita: Claude emitió [REAGENDAR_VISITA:id|fecha|hora]
+            if reagendar_data:
+                await reagendar_visita(reagendar_data["id"], reagendar_data["fecha"], reagendar_data["hora"])
+                logger.info(f"Visita {reagendar_data['id']} reagendada a {reagendar_data['fecha']} {reagendar_data['hora']} ({msg.telefono})")
 
             # Handoff: Claude emitió [HANDOFF] → transferir a asesor
             if razon_handoff and not await esta_en_handoff(msg.telefono):

@@ -360,12 +360,17 @@ async def generar_respuesta(mensaje: str, historial: list[dict], perfil: dict | 
                     system_prompt += (
                         "\n\n## Lead's scheduled visits\n"
                         f"{lineas}\n\n"
-                        "If the lead asks to cancel a visit:\n"
+                        "If the lead asks to CANCEL a visit:\n"
                         "1. Show them the visit details and ask for confirmation.\n"
-                        "2. Once they confirm, add at the END of your response: `[CANCELAR_VISITA:ID]` "
-                        "(use the actual numeric ID from the list above).\n"
+                        "2. Once they confirm, add at the END of your response: `[CANCELAR_VISITA:ID]`.\n"
                         "3. Confirm in your message that the visit has been cancelled.\n"
-                        "Do NOT emit [CANCELAR_VISITA] without explicit confirmation from the lead."
+                        "Do NOT emit [CANCELAR_VISITA] without explicit confirmation.\n\n"
+                        "If the lead asks to RESCHEDULE a visit:\n"
+                        "1. Show the current visit and ask for the new date and time.\n"
+                        "2. Call `verificar_disponibilidad_visita` for the proposed new slot.\n"
+                        "3. If available, confirm and add at the END: `[REAGENDAR_VISITA:ID|YYYY-MM-DD|HH:MM]`.\n"
+                        "4. If not available, inform the lead and ask for another date/time.\n"
+                        "Do NOT emit [REAGENDAR_VISITA] without availability check and lead confirmation."
                     )
                 else:
                     lineas = "\n".join(
@@ -376,12 +381,17 @@ async def generar_respuesta(mensaje: str, historial: list[dict], perfil: dict | 
                     system_prompt += (
                         "\n\n## Visitas agendadas del lead\n"
                         f"{lineas}\n\n"
-                        "Si el lead pide cancelar su visita:\n"
-                        "1. Muéstrale los datos de la visita y pídele confirmación explícita.\n"
-                        "2. Cuando confirme, agrega AL FINAL de tu respuesta: `[CANCELAR_VISITA:ID]` "
-                        "(usa el ID numérico real de la lista de arriba).\n"
+                        "Si el lead pide CANCELAR su visita:\n"
+                        "1. Muéstrale los datos y pídele confirmación explícita.\n"
+                        "2. Cuando confirme, agrega AL FINAL: `[CANCELAR_VISITA:ID]`.\n"
                         "3. Confirma en tu mensaje que la visita fue cancelada.\n"
-                        "NO emitas [CANCELAR_VISITA] sin confirmación explícita del lead."
+                        "NO emitas [CANCELAR_VISITA] sin confirmación del lead.\n\n"
+                        "Si el lead pide REAGENDAR su visita:\n"
+                        "1. Muestra la visita actual y pide la nueva fecha y hora.\n"
+                        "2. Llama `verificar_disponibilidad_visita` para el nuevo horario propuesto.\n"
+                        "3. Si está disponible, confirma y agrega AL FINAL: `[REAGENDAR_VISITA:ID|YYYY-MM-DD|HH:MM]`.\n"
+                        "4. Si no está disponible, informa al lead y pide otro horario.\n"
+                        "NO emitas [REAGENDAR_VISITA] sin verificar disponibilidad y confirmar con el lead."
                     )
         except Exception as e:
             logger.warning(f"No se pudieron cargar visitas del lead: {e}")

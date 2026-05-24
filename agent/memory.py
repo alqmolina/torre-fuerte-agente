@@ -704,6 +704,18 @@ async def cancelar_visita(visita_id: int) -> None:
             await session.commit()
 
 
+async def reagendar_visita(visita_id: int, nueva_fecha: str, nueva_hora: str) -> None:
+    """Actualiza fecha y hora de una visita confirmada."""
+    async with async_session() as session:
+        result = await session.execute(select(Visita).where(Visita.id == visita_id))
+        v = result.scalar_one_or_none()
+        if v:
+            v.fecha = nueva_fecha
+            v.hora = nueva_hora
+            v.estado = "confirmada"
+            await session.commit()
+
+
 async def completar_visita(visita_id: int) -> None:
     """Marca una visita como realizada."""
     async with async_session() as session:
