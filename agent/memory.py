@@ -679,6 +679,43 @@ async def obtener_metricas() -> dict:
         )
         por_idioma = {(r[0] or "es"): r[1] for r in idioma_rows}
 
+        # Métricas de visitas
+        visitas_total = (await session.scalar(
+            select(func.count(Visita.id)).where(Visita.estado != "cancelada")
+        )) or 0
+        visitas_completadas = (await session.scalar(
+            select(func.count(Visita.id)).where(Visita.estado == "completada")
+        )) or 0
+        visitas_canceladas = (await session.scalar(
+            select(func.count(Visita.id)).where(Visita.estado == "cancelada")
+        )) or 0
+        leads_con_visita = (await session.scalar(
+            select(func.count(distinct(Visita.telefono))).where(Visita.estado != "cancelada")
+        )) or 0
+
+        # Leads activos (mensaje en últimos 7 días)
+        leads_activos_7d = (await session.scalar(
+            select(func.count(distinct(Mensaje.telefono)))
+            .where(Mensaje.timestamp >= semana)
+        )) or 0
+
+        # Leads calientes
+        leads_calientes = (await session.scalar(
+            select(func.count(Lead.id)).where(Lead.temperatura == "caliente")
+        )) or 0
+
+        # Tendencia semanal: leads por semana en las últimas 4 semanas
+        tendencia_semanal = []
+        for i in range(3, -1, -1):
+            inicio = hoy - timedelta(days=(i + 1) * 7)
+            fin = hoy - timedelta(days=i * 7)
+            cnt = (await session.scalar(
+                select(func.count(Lead.id)).where(Lead.fecha >= inicio, Lead.fecha < fin)
+            )) or 0
+            tendencia_semanal.append({"semana": f"S-{i}" if i > 0 else "Esta sem.", "leads": cnt})
+
+        tasa_show_up = round(visitas_completadas / visitas_total * 100, 1) if visitas_total else 0
+
         return {
             "total_leads": total_leads,
             "total_conversaciones": total_conversaciones,
@@ -695,6 +732,14 @@ async def obtener_metricas() -> dict:
             "seguimientos_por_numero": seguimientos_por_numero,
             "por_idioma": por_idioma,
             "tasa_conversion": round(total_leads / total_conversaciones * 100, 1) if total_conversaciones else 0,
+            "visitas_total": visitas_total,
+            "visitas_completadas": visitas_completadas,
+            "visitas_canceladas": visitas_canceladas,
+            "leads_con_visita": leads_con_visita,
+            "leads_activos_7d": leads_activos_7d,
+            "leads_calientes": leads_calientes,
+            "tasa_show_up": tasa_show_up,
+            "tendencia_semanal": tendencia_semanal,
         }
 
 

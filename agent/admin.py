@@ -714,6 +714,46 @@ async def admin_dashboard(request: Request):
     seg1 = m["seguimientos_por_numero"].get(1, 0)
     seg2 = m["seguimientos_por_numero"].get(2, 0)
 
+    # Embudo de conversión
+    funnel_steps = [
+        ("Conversaciones", m["total_conversaciones"], "#3498db"),
+        ("Leads calificados", m["total_leads"], "#9b59b6"),
+        ("Leads calientes", m["leads_calientes"], "#e74c3c"),
+        ("Visitas agendadas", m["leads_con_visita"], "#e67e22"),
+        ("Visitas realizadas", m["visitas_completadas"], "#27ae60"),
+    ]
+    max_funnel = funnel_steps[0][1] or 1
+    funnel_html = ""
+    prev_val = None
+    for label, val, color in funnel_steps:
+        pct = round(val / max_funnel * 100)
+        conv = f" · {round(val/prev_val*100)}% del anterior" if prev_val else ""
+        funnel_html += f"""
+        <div style="margin-bottom:14px">
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+            <span style="font-weight:500">{label}</span>
+            <span style="font-weight:700;color:{color}">{val}<span style="font-weight:400;color:#999;font-size:12px">{conv}</span></span>
+          </div>
+          <div style="height:10px;background:#f0f4f8;border-radius:5px">
+            <div style="width:{pct}%;height:100%;background:{color};border-radius:5px;transition:width 0.3s"></div>
+          </div>
+        </div>"""
+        prev_val = val if val else prev_val
+
+    # Tendencia semanal (barras CSS)
+    tend = m["tendencia_semanal"]
+    max_tend = max((t["leads"] for t in tend), default=1) or 1
+    tend_html = '<div style="display:flex;align-items:flex-end;gap:8px;height:80px;padding-top:8px">'
+    for t in tend:
+        h = max(4, round(t["leads"] / max_tend * 70))
+        tend_html += f"""
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">
+          <span style="font-size:11px;font-weight:600;color:#1a3c5e">{t['leads']}</span>
+          <div style="width:100%;height:{h}px;background:#1a3c5e;border-radius:4px 4px 0 0;opacity:0.8"></div>
+          <span style="font-size:10px;color:#888">{t['semana']}</span>
+        </div>"""
+    tend_html += "</div>"
+
     return f"""<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -724,16 +764,16 @@ async def admin_dashboard(request: Request):
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; }}
     .header {{ background: #1a3c5e; color: white; padding: 16px 20px; display: flex; align-items: center; gap: 12px; }}
-    .container {{ max-width: 900px; margin: 0 auto; padding: 20px 16px; }}
+    .container {{ max-width: 960px; margin: 0 auto; padding: 20px 16px; }}
     .grid-4 {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 20px; }}
     .grid-2 {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin-bottom: 14px; }}
     .kpi {{ background: white; border-radius: 12px; padding: 18px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); text-align: center; }}
     .kpi .val {{ font-size: 36px; font-weight: 700; color: #1a3c5e; line-height: 1.1; }}
     .kpi .lbl {{ font-size: 12px; color: #888; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }}
     .kpi .sub {{ font-size: 11px; color: #bbb; margin-top: 2px; }}
-    .card {{ background: white; border-radius: 12px; padding: 18px 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }}
+    .card {{ background: white; border-radius: 12px; padding: 18px 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 14px; }}
     .card h3 {{ font-size: 13px; font-weight: 700; color: #1a3c5e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 14px; }}
-    .badge {{ display:inline-block; padding:3px 10px; border-radius:12px; font-size:12px; font-weight:600; }}
+    .section-title {{ font-size: 11px; font-weight: 700; color: #999; text-transform: uppercase; letter-spacing: 1px; margin: 24px 0 10px; }}
   </style>
 </head>
 <body>
@@ -747,52 +787,67 @@ async def admin_dashboard(request: Request):
   </div>
 
   <div class="container">
+
+    <p class="section-title">Resumen general</p>
     <div class="grid-4">
-      <div class="kpi">
-        <div class="val">{m['total_leads']}</div>
-        <div class="lbl">Total Leads</div>
-        <div class="sub">+{m['leads_hoy']} hoy · +{m['leads_semana']} esta semana</div>
-      </div>
       <div class="kpi">
         <div class="val">{m['total_conversaciones']}</div>
         <div class="lbl">Conversaciones</div>
         <div class="sub">Números únicos atendidos</div>
       </div>
       <div class="kpi">
-        <div class="val" style="color:{'#e74c3c' if m['handoffs_activos'] else '#27ae60'}">{m['handoffs_activos']}</div>
-        <div class="lbl">Handoffs Activos</div>
-        <div class="sub">{m['total_handoffs']} transferencias totales</div>
+        <div class="val">{m['total_leads']}</div>
+        <div class="lbl">Leads calificados</div>
+        <div class="sub">+{m['leads_hoy']} hoy · +{m['leads_semana']} esta sem.</div>
       </div>
       <div class="kpi">
         <div class="val">{m['tasa_conversion']}%</div>
-        <div class="lbl">Tasa Calificación</div>
+        <div class="lbl">Tasa calificación</div>
         <div class="sub">Leads / conversaciones</div>
       </div>
+      <div class="kpi">
+        <div class="val" style="color:#3498db">{m['leads_activos_7d']}</div>
+        <div class="lbl">Leads activos</div>
+        <div class="sub">Con mensaje en últimos 7 días</div>
+      </div>
     </div>
 
-    <div class="grid-4" style="margin-bottom:20px">
-      <div class="kpi" style="background:#fff8e1;border:1px solid #f0d96a">
-        <div class="val" style="color:#d68910">{m['leads_hoy']}</div>
-        <div class="lbl">Leads hoy</div>
-      </div>
+    <p class="section-title">Embudo de conversión</p>
+    <div class="card">
+      {funnel_html}
+    </div>
+
+    <p class="section-title">Visitas</p>
+    <div class="grid-4">
       <div class="kpi" style="background:#eafaf1;border:1px solid #a9dfbf">
-        <div class="val" style="color:#27ae60">{m['leads_semana']}</div>
-        <div class="lbl">Últimos 7 días</div>
+        <div class="val" style="color:#27ae60">{m['visitas_completadas']}</div>
+        <div class="lbl">Realizadas</div>
       </div>
       <div class="kpi" style="background:#eaf2fb;border:1px solid #aed6f1">
-        <div class="val" style="color:#2980b9">{m['leads_mes']}</div>
-        <div class="lbl">Últimos 30 días</div>
+        <div class="val" style="color:#2980b9">{m['visitas_total']}</div>
+        <div class="lbl">Agendadas</div>
+        <div class="sub">Activas (sin cancelar)</div>
       </div>
-      <div class="kpi" style="background:#f4f6f7;border:1px solid #d5dbdb">
-        <div class="val" style="color:#555">{m['total_seguimientos']}</div>
-        <div class="lbl">Seguimientos enviados</div>
-        <div class="sub">#{seg1} primeros · #{seg2} segundos</div>
+      <div class="kpi" style="background:#fdedec;border:1px solid #f1948a">
+        <div class="val" style="color:#e74c3c">{m['visitas_canceladas']}</div>
+        <div class="lbl">Canceladas</div>
+      </div>
+      <div class="kpi" style="background:#{'eafaf1' if m['tasa_show_up'] >= 50 else 'fff8e1'};border:1px solid #{'a9dfbf' if m['tasa_show_up'] >= 50 else 'f0d96a'}">
+        <div class="val" style="color:#{'27ae60' if m['tasa_show_up'] >= 50 else 'd68910'}">{m['tasa_show_up']}%</div>
+        <div class="lbl">Show-up rate</div>
+        <div class="sub">Realizadas / agendadas</div>
       </div>
     </div>
 
+    <p class="section-title">Tendencia semanal (últimas 4 semanas)</p>
+    <div class="card">
+      {tend_html}
+    </div>
+
+    <p class="section-title">Segmentación de leads</p>
     <div class="grid-2">
       <div class="card">
-        <h3>🌡️ Temperatura de leads</h3>
+        <h3>🌡️ Temperatura</h3>
         {temp_html}
       </div>
       <div class="card">
@@ -817,20 +872,40 @@ async def admin_dashboard(request: Request):
         <h3>🌐 Idioma de los leads</h3>
         {idioma_html}
       </div>
-      <div class="card" style="display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px">
-        <a href="/leads/export" style="display:block;background:#1a3c5e;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;width:100%;text-align:center">
-          📥 Descargar Excel de Leads
-        </a>
-        <a href="/admin/broadcast" style="display:block;background:#1a5276;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;width:100%;text-align:center">
-          📢 Enviar Broadcast
-        </a>
-        <a href="/admin" style="display:block;background:#f0f4f8;color:#1a3c5e;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;border:1px solid #d0dce8;width:100%;text-align:center">
-          💬 Ver conversaciones activas
-        </a>
+      <div class="card">
+        <h3>📊 Actividad adicional</h3>
+        <div style="margin-bottom:10px;font-size:13px;display:flex;justify-content:space-between">
+          <span style="color:#666">Handoffs activos</span>
+          <span style="font-weight:700;color:{'#e74c3c' if m['handoffs_activos'] else '#27ae60'}">{m['handoffs_activos']} <span style="font-weight:400;color:#999">/ {m['total_handoffs']} totales</span></span>
+        </div>
+        <div style="margin-bottom:10px;font-size:13px;display:flex;justify-content:space-between">
+          <span style="color:#666">Seguimientos enviados</span>
+          <span style="font-weight:700;color:#1a3c5e">{m['total_seguimientos']} <span style="font-weight:400;color:#999">(#{seg1} + #{seg2})</span></span>
+        </div>
+        <div style="font-size:13px;display:flex;justify-content:space-between">
+          <span style="color:#666">Leads con visita</span>
+          <span style="font-weight:700;color:#e67e22">{m['leads_con_visita']}</span>
+        </div>
       </div>
     </div>
 
-    <p style="text-align:center;font-size:12px;color:#bbb;margin-top:20px">Actualiza al recargar la página</p>
+    <p class="section-title">Acciones</p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:24px">
+      <a href="/leads/export" style="display:block;background:#1a3c5e;color:white;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;text-align:center">
+        📥 Descargar Excel de Leads
+      </a>
+      <a href="/admin/broadcast" style="display:block;background:#1a5276;color:white;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;text-align:center">
+        📢 Enviar Broadcast
+      </a>
+      <a href="/admin/visitas" style="display:block;background:#e67e22;color:white;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;text-align:center">
+        📅 Ver Visitas
+      </a>
+      <a href="/admin" style="display:block;background:#f0f4f8;color:#1a3c5e;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;border:1px solid #d0dce8;text-align:center">
+        💬 Ver Conversaciones
+      </a>
+    </div>
+
+    <p style="text-align:center;font-size:12px;color:#bbb;margin-top:8px">Actualiza al recargar la página</p>
   </div>
 </body>
 </html>"""
