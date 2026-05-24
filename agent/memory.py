@@ -353,8 +353,8 @@ async def buscar_leads(
                 "habitaciones": lead.habitaciones,
                 "temperatura": lead.temperatura,
                 "intencion": lead.intencion,
-                "fecha_registro": _col(lead.fecha).strftime("%Y-%m-%d") if lead.fecha else "",
-                "ultimo_chat": _col(ult).strftime("%Y-%m-%d %H:%M") if ult else "",
+                "fecha_registro": _col(lead.fecha)[:10] if lead.fecha else "",
+                "ultimo_chat": _col(ult) if ult else "",
                 "proxima_visita": f"{prox.fecha} {prox.hora}" if prox else "",
             })
         return resultados
