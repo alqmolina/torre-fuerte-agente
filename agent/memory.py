@@ -801,6 +801,53 @@ async def obtener_visitas_proximas() -> list[dict]:
         ]
 
 
+async def buscar_visitas(
+    nombre: str = "",
+    telefono: str = "",
+    fecha: str = "",
+    apto: str = "",
+    estado: str = "",          # "completada" | "pendiente" | "" (todas)
+) -> list[dict]:
+    """Busca visitas con filtros opcionales. estado='pendiente' = confirmadas no realizadas."""
+    hoy = (datetime.utcnow() + _COL).strftime("%Y-%m-%d")
+    async with async_session() as session:
+        q = select(Visita)
+
+        # Excluir canceladas salvo que el filtro pida específicamente canceladas
+        if estado == "completada":
+            q = q.where(Visita.estado == "completada")
+        elif estado == "pendiente":
+            q = q.where(or_(Visita.estado == "confirmada", Visita.estado.is_(None)))
+        else:
+            q = q.where(Visita.estado != "cancelada")
+
+        if nombre:
+            q = q.where(Visita.nombre.ilike(f"%{nombre}%"))
+        if telefono:
+            q = q.where(Visita.telefono.ilike(f"%{telefono}%"))
+        if fecha:
+            q = q.where(Visita.fecha == fecha)
+        if apto:
+            # subquery: teléfonos de leads con ese apartamento
+            sub = select(Lead.telefono).where(Lead.apto.ilike(f"%{apto}%")).scalar_subquery()
+            q = q.where(Visita.telefono.in_(sub))
+
+        q = q.order_by(Visita.fecha.asc(), Visita.hora.asc())
+        result = await session.execute(q)
+        visitas = result.scalars().all()
+
+        proximas = [v for v in visitas if v.fecha and v.fecha >= hoy]
+        pasadas  = [v for v in visitas if v.fecha and v.fecha < hoy]
+        ordenadas = proximas + list(reversed(pasadas))
+        return [
+            {"id": v.id, "telefono": v.telefono, "nombre": v.nombre,
+             "fecha": v.fecha, "hora": v.hora, "notas": v.notas or "",
+             "estado": v.estado or "confirmada",
+             "pasada": bool(v.fecha and v.fecha < hoy)}
+            for v in ordenadas
+        ]
+
+
 async def obtener_todas_las_visitas() -> list[dict]:
     """Retorna todas las visitas (todos los estados) ordenadas por fecha desc para reporte."""
     async with async_session() as session:

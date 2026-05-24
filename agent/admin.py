@@ -36,6 +36,7 @@ from agent.memory import (
     obtener_visitas_lead,
     obtener_visitas_proximas,
     obtener_todas_las_visitas,
+    buscar_visitas,
     cancelar_visita,
     completar_visita,
     obtener_visita_por_id,
@@ -1326,7 +1327,18 @@ async def admin_visitas(request: Request):
     if not _autenticado(request):
         return RedirectResponse("/admin/login", status_code=302)
 
-    visitas = await obtener_visitas_proximas()
+    params = request.query_params
+    q_nombre   = params.get("nombre", "").strip()
+    q_telefono = params.get("telefono", "").strip()
+    q_fecha    = params.get("fecha", "").strip()
+    q_apto     = params.get("apto", "").strip()
+    q_estado   = params.get("estado", "").strip()
+
+    hay_filtros = any([q_nombre, q_telefono, q_fecha, q_apto, q_estado])
+    if hay_filtros:
+        visitas = await buscar_visitas(q_nombre, q_telefono, q_fecha, q_apto, q_estado)
+    else:
+        visitas = await obtener_visitas_proximas()
 
     filas = ""
     for v in visitas:
@@ -1398,8 +1410,22 @@ async def admin_visitas(request: Request):
             f'</div></div></div>'
         )
 
+    total = len(visitas)
+    resumen = f'<p style="font-size:13px;color:#888;margin-bottom:12px">{total} visita{"s" if total != 1 else ""} encontrada{"s" if total != 1 else ""}</p>' if hay_filtros else ""
+
     if not filas:
-        filas = '<div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:40px;margin-bottom:12px">📅</div><p>Sin visitas registradas aún</p></div>'
+        filas = '<div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:40px;margin-bottom:12px">📅</div><p>Sin visitas para los filtros aplicados</p></div>'
+
+    # Valores actuales para repoblar el formulario
+    v_nombre   = _esc(q_nombre)
+    v_telefono = _esc(q_telefono)
+    v_fecha    = _esc(q_fecha)
+    v_apto     = _esc(q_apto)
+    sel_todas      = 'selected' if q_estado == ""           else ""
+    sel_pendiente  = 'selected' if q_estado == "pendiente"  else ""
+    sel_completada = 'selected' if q_estado == "completada" else ""
+
+    limpiar_link = '<a href="/admin/visitas" style="font-size:12px;color:#e74c3c;text-decoration:none">✕ Limpiar</a>' if hay_filtros else ""
 
     return f"""<!DOCTYPE html>
 <html lang="es">
@@ -1412,6 +1438,11 @@ async def admin_visitas(request: Request):
     body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; }}
     .header {{ background: #1a3c5e; color: white; padding: 16px 20px; display: flex; align-items: center; gap: 12px; }}
     .container {{ max-width: 700px; margin: 0 auto; padding: 20px 16px; }}
+    .search-card {{ background:white; border-radius:12px; padding:16px 18px; box-shadow:0 1px 4px rgba(0,0,0,0.08); margin-bottom:16px; }}
+    .search-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; }}
+    input, select {{ width:100%; padding:8px 10px; border:1px solid #d0dce8; border-radius:7px; font-size:13px; font-family:inherit; }}
+    .btn-search {{ background:#1a3c5e; color:white; border:none; border-radius:7px; padding:8px 18px; font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap; }}
+    .btn-search:hover {{ background:#15304e; }}
   </style>
 </head>
 <body>
@@ -1425,6 +1456,26 @@ async def admin_visitas(request: Request):
     <a href="/admin/logout" style="color:rgba(255,255,255,0.6);font-size:12px;text-decoration:none">Salir</a>
   </div>
   <div class="container">
+    <div class="search-card">
+      <form method="get" action="/admin/visitas">
+        <div class="search-grid">
+          <input type="text" name="nombre" placeholder="Nombre lead" value="{v_nombre}">
+          <input type="text" name="telefono" placeholder="Teléfono" value="{v_telefono}">
+          <input type="date" name="fecha" value="{v_fecha}">
+          <input type="text" name="apto" placeholder="Apartamento" value="{v_apto}">
+          <select name="estado">
+            <option value="" {sel_todas}>Todas</option>
+            <option value="pendiente" {sel_pendiente}>Por realizar</option>
+            <option value="completada" {sel_completada}>Realizadas</option>
+          </select>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button type="submit" class="btn-search">🔍 Buscar</button>
+            {limpiar_link}
+          </div>
+        </div>
+      </form>
+    </div>
+    {resumen}
     {filas}
   </div>
 </body>
