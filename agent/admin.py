@@ -1511,7 +1511,8 @@ async def lead_historial(telefono: str, request: Request):
     items = ""
     for ev in eventos:
         color = ev.get("color", "#888")
-        fecha_fmt = _col(ev["fecha"]) if ev.get("fecha") else "—"
+        from datetime import timedelta as _td
+        fecha_fmt = ((ev["fecha"] + _td(hours=-5)).strftime("%Y-%m-%d %H:%M")) if ev.get("fecha") else "—"
         detalle_html = f'<div style="font-size:12px;color:#666;margin-top:3px">{_esc(ev["detalle"])}</div>' if ev.get("detalle") else ""
         items += (
             f'<div style="display:flex;gap:14px;margin-bottom:16px">'
