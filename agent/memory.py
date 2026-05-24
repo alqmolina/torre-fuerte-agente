@@ -801,6 +801,21 @@ async def obtener_visitas_proximas() -> list[dict]:
         ]
 
 
+async def obtener_todas_las_visitas() -> list[dict]:
+    """Retorna todas las visitas (todos los estados) ordenadas por fecha desc para reporte."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(Visita).order_by(Visita.fecha.desc(), Visita.hora.desc())
+        )
+        return [
+            {"id": v.id, "telefono": v.telefono, "nombre": v.nombre,
+             "fecha": v.fecha, "hora": v.hora, "notas": v.notas or "",
+             "estado": v.estado or "confirmada",
+             "creado_at": _col(v.creado_at)}
+            for v in result.scalars().all()
+        ]
+
+
 async def obtener_visita_por_id(visita_id: int) -> dict | None:
     """Retorna una visita por su ID, o None si no existe."""
     async with async_session() as session:

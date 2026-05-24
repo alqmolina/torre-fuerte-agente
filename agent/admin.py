@@ -11,7 +11,8 @@ import httpx
 import logging
 from typing import List
 from fastapi import APIRouter, Form, Request, UploadFile, File
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from agent.tools import exportar_visitas_excel
 
 logger = logging.getLogger("agentkit")
 
@@ -34,6 +35,7 @@ from agent.memory import (
     guardar_visita,
     obtener_visitas_lead,
     obtener_visitas_proximas,
+    obtener_todas_las_visitas,
     cancelar_visita,
     completar_visita,
     obtener_visita_por_id,
@@ -1419,6 +1421,7 @@ async def admin_visitas(request: Request):
       <div style="font-size:18px;font-weight:600">Torre Fuerte · Visitas</div>
       <div style="font-size:12px;opacity:0.7">Próximas visitas al proyecto</div>
     </div>
+    <a href="/admin/visitas/export" style="color:white;background:rgba(255,255,255,0.15);border-radius:6px;padding:6px 12px;font-size:12px;text-decoration:none;font-weight:600;margin-right:10px;white-space:nowrap">📥 Reporte</a>
     <a href="/admin/logout" style="color:rgba(255,255,255,0.6);font-size:12px;text-decoration:none">Salir</a>
   </div>
   <div class="container">
@@ -1426,6 +1429,19 @@ async def admin_visitas(request: Request):
   </div>
 </body>
 </html>"""
+
+
+@router.get("/visitas/export")
+async def visitas_export(request: Request):
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
+    visitas = await obtener_todas_las_visitas()
+    ruta = exportar_visitas_excel(visitas)
+    return FileResponse(
+        ruta,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename="visitas-torre-fuerte.xlsx",
+    )
 
 
 @router.get("/visita/{telefono}", response_class=HTMLResponse)

@@ -467,6 +467,55 @@ def exportar_leads_excel(leads: list[dict]) -> str:
     return LEADS_EXCEL_PATH
 
 
+_VISITAS_EXCEL_PATH = "data/visitas.xlsx"
+_VISITAS_HEADERS = ["Fecha visita", "Hora", "Nombre", "Teléfono", "Estado", "Notas", "Creado"]
+_ESTADO_COLORS = {"completada": "C6EFCE", "cancelada": "FFC7CE", "confirmada": "DDEBF7"}
+
+def exportar_visitas_excel(visitas: list[dict]) -> str:
+    """Genera data/visitas.xlsx con todas las visitas. Retorna la ruta."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Visitas Torre Fuerte"
+
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    header_fill = PatternFill(fill_type="solid", fgColor=_HEADER_COLOR)
+    header_align = Alignment(horizontal="center", vertical="center")
+
+    for col_idx, h in enumerate(_VISITAS_HEADERS, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=h)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_align
+    ws.row_dimensions[1].height = 20
+
+    for row_idx, v in enumerate(visitas, start=2):
+        estado = v.get("estado", "confirmada")
+        row_color = _ESTADO_COLORS.get(estado, "FFFFFF")
+        row_fill = PatternFill(fill_type="solid", fgColor=row_color)
+        fila = [
+            v.get("fecha", ""),
+            v.get("hora", ""),
+            v.get("nombre", ""),
+            v.get("telefono", ""),
+            estado.upper(),
+            v.get("notas", ""),
+            (v.get("creado_at") or "")[:16],
+        ]
+        for col_idx, value in enumerate(fila, start=1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=value)
+            cell.fill = row_fill
+            cell.alignment = Alignment(vertical="center")
+
+    col_widths = [14, 8, 28, 18, 14, 35, 18]
+    for col_idx, width in enumerate(col_widths, start=1):
+        ws.column_dimensions[get_column_letter(col_idx)].width = width
+
+    os.makedirs("data", exist_ok=True)
+    wb.save(_VISITAS_EXCEL_PATH)
+    logger.info(f"Excel de visitas generado: {len(visitas)} visitas")
+    return _VISITAS_EXCEL_PATH
+
+
 def registrar_visita(telefono: str, nombre: str, fecha: str, hora: str) -> dict:
     """Registra una solicitud de visita al proyecto."""
     visita = {
