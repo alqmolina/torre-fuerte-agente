@@ -801,6 +801,31 @@ async def obtener_visitas_proximas() -> list[dict]:
         ]
 
 
+async def obtener_visita_por_id(visita_id: int) -> dict | None:
+    """Retorna una visita por su ID, o None si no existe."""
+    async with async_session() as session:
+        result = await session.execute(select(Visita).where(Visita.id == visita_id))
+        v = result.scalar_one_or_none()
+        if not v:
+            return None
+        return {"id": v.id, "telefono": v.telefono, "nombre": v.nombre,
+                "fecha": v.fecha, "hora": v.hora, "notas": v.notas or "",
+                "estado": v.estado or "confirmada"}
+
+
+async def editar_visita(visita_id: int, nombre: str, fecha: str, hora: str, notas: str) -> None:
+    """Edita los campos de una visita existente."""
+    async with async_session() as session:
+        result = await session.execute(select(Visita).where(Visita.id == visita_id))
+        v = result.scalar_one_or_none()
+        if v:
+            v.nombre = nombre
+            v.fecha = fecha
+            v.hora = hora
+            v.notas = notas
+            await session.commit()
+
+
 async def cancelar_visita(visita_id: int) -> None:
     async with async_session() as session:
         result = await session.execute(select(Visita).where(Visita.id == visita_id))

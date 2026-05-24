@@ -36,6 +36,8 @@ from agent.memory import (
     obtener_visitas_proximas,
     cancelar_visita,
     completar_visita,
+    obtener_visita_por_id,
+    editar_visita,
     obtener_idioma,
     buscar_leads,
     obtener_actividad_lead,
@@ -1347,6 +1349,14 @@ async def admin_visitas(request: Request):
             opacidad = ""
             etiqueta = ""
 
+        btn_editar = ""
+        if not completada:
+            btn_editar = (
+                f'<a href="/admin/visita/{v["id"]}/editar" '
+                f'style="display:block;background:#eaf2fb;color:#1a5276;border:1px solid #aed6f1;border-radius:6px;'
+                f'padding:6px 12px;font-size:12px;font-weight:600;text-decoration:none;text-align:center;white-space:nowrap">✏️ Editar</a>'
+            )
+
         btn_completar = ""
         if not completada:
             btn_completar = (
@@ -1380,6 +1390,7 @@ async def admin_visitas(request: Request):
             f'<div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">'
             f'<a href="/admin/chat/{_esc(v["telefono"])}" style="background:#1a3c5e;color:white;border-radius:6px;'
             f'padding:6px 12px;font-size:12px;text-decoration:none;font-weight:600;white-space:nowrap">Ver chat</a>'
+            f'{btn_editar}'
             f'{btn_completar}'
             f'{btn_cancelar}'
             f'</div></div></div>'
@@ -1550,6 +1561,125 @@ async def visita_save(
                 logger.error(f"Error enviando confirmacion visita a {telefono}: {type(e).__name__}: {e}")
 
     return RedirectResponse(f"/admin/chat/{telefono}", status_code=303)
+
+
+@router.get("/visita/{visita_id}/editar", response_class=HTMLResponse)
+async def visita_editar_form(visita_id: int, request: Request):
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
+
+    v = await obtener_visita_por_id(visita_id)
+    if not v:
+        return HTMLResponse("<p>Visita no encontrada</p>", status_code=404)
+
+    tel_esc = _esc(v["telefono"])
+    horas = ["09:00","09:30","10:00","10:30","11:00","11:30",
+             "14:00","14:30","15:00","15:30","16:00","16:30","17:00"]
+    opciones_hora = "".join(
+        f'<option value="{h}" {"selected" if h == v["hora"] else ""}>{h}</option>'
+        for h in horas
+    )
+
+    return f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Editar visita — Torre Fuerte</title>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; }}
+    .header {{ background: #1a3c5e; color: white; padding: 16px 20px; display: flex; align-items: center; gap: 12px; }}
+    .container {{ max-width: 500px; margin: 0 auto; padding: 24px 16px; }}
+    .card {{ background: white; border-radius: 12px; padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }}
+    label {{ display:block; font-size:13px; font-weight:600; color:#444; margin-bottom:6px; }}
+    input, select, textarea {{ width:100%; padding:10px 12px; border:1px solid #d0dce8; border-radius:8px; font-size:14px; margin-bottom:16px; font-family:inherit; }}
+    textarea {{ min-height:80px; resize:vertical; }}
+    .btn {{ width:100%; background:#1a3c5e; color:white; border:none; border-radius:8px; padding:12px; font-size:15px; font-weight:600; cursor:pointer; }}
+    .btn:hover {{ background:#15304e; }}
+    .btn-sec {{ display:block; text-align:center; color:#888; font-size:13px; margin-top:12px; text-decoration:none; }}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/admin/visitas" style="color:white;text-decoration:none;font-size:20px">←</a>
+    <div style="flex:1">
+      <div style="font-size:18px;font-weight:600">Editar visita</div>
+      <div style="font-size:12px;opacity:0.7">📱 {tel_esc}</div>
+    </div>
+  </div>
+  <div class="container">
+    <div class="card">
+      <form method="post" action="/admin/visita/{visita_id}/editar">
+        <label>Nombre del cliente</label>
+        <input type="text" name="nombre" value="{_esc(v['nombre'])}" required>
+        <label>Fecha</label>
+        <input type="date" name="fecha" value="{_esc(v['fecha'])}" required>
+        <label>Hora</label>
+        <select name="hora">{opciones_hora}</select>
+        <label>Notas (opcional)</label>
+        <textarea name="notas">{_esc(v['notas'])}</textarea>
+        <label style="display:flex;align-items:center;gap:8px;font-weight:normal;margin-bottom:16px">
+          <input type="checkbox" name="enviar_wp" value="1" style="width:auto;margin-bottom:0">
+          Notificar al lead por WhatsApp
+        </label>
+        <button type="submit" class="btn">Guardar cambios</button>
+      </form>
+      <a href="/admin/visitas" class="btn-sec">Cancelar</a>
+    </div>
+  </div>
+</body>
+</html>"""
+
+
+@router.post("/visita/{visita_id}/editar")
+async def visita_editar_save(
+    visita_id: int,
+    request: Request,
+    nombre: str = Form(...),
+    fecha: str = Form(...),
+    hora: str = Form(...),
+    notas: str = Form(default=""),
+    enviar_wp: str = Form(default=""),
+):
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
+
+    v = await obtener_visita_por_id(visita_id)
+    if not v:
+        return HTMLResponse("<p>Visita no encontrada</p>", status_code=404)
+
+    await editar_visita(visita_id, nombre.strip(), fecha, hora, notas.strip())
+
+    if enviar_wp == "1" and proveedor:
+        try:
+            tel_envio = v["telefono"].lstrip("+")
+            idioma = await obtener_idioma(v["telefono"]) or "es"
+            fecha_fmt = _fmt_fecha(fecha, idioma)
+            notas_line = f"\n📝 {notas.strip()}" if notas.strip() else ""
+            if idioma == "en":
+                msg = (
+                    f"Torre Fuerte — Visit Updated\n\n"
+                    f"Hello {nombre.strip()}, your visit has been rescheduled:\n\n"
+                    f"Date: {fecha_fmt}\n"
+                    f"Time: {hora}"
+                    f"{notas_line}\n\n"
+                    f"See you there! Reply here if you need to make any changes."
+                )
+            else:
+                msg = (
+                    f"Torre Fuerte — Visita actualizada\n\n"
+                    f"Hola {nombre.strip()}, tu visita ha sido actualizada:\n\n"
+                    f"Fecha: {fecha_fmt}\n"
+                    f"Hora: {hora}"
+                    f"{notas_line}\n\n"
+                    f"Te esperamos! Si necesitas otro cambio, escribenos aqui."
+                )
+            await proveedor.enviar_mensaje(tel_envio, msg)
+        except Exception as e:
+            logger.error(f"Error notificando edicion visita {visita_id}: {e}")
+
+    return RedirectResponse("/admin/visitas", status_code=303)
 
 
 @router.post("/visita/{visita_id}/cancelar")
