@@ -23,6 +23,7 @@ from agent.memory import (
     mensaje_ya_procesado, marcar_mensaje_procesado,
     obtener_leads_para_seguimiento, registrar_seguimiento,
     guardar_visita,
+    obtener_visitas_para_recordatorio, marcar_recordatorio,
 )
 import agent.admin as admin_module
 from agent.tools import (
@@ -201,6 +202,76 @@ async def _tarea_handoff_inactivos() -> None:
         await asyncio.sleep(120)  # revisar cada 2 minutos
 
 
+_MESES_ES = ["enero","febrero","marzo","abril","mayo","junio",
+             "julio","agosto","septiembre","octubre","noviembre","diciembre"]
+_MESES_EN = ["January","February","March","April","May","June",
+             "July","August","September","October","November","December"]
+
+
+async def _tarea_recordatorios_visitas() -> None:
+    """Tarea background: envía recordatorios de visita 24h y 1h antes."""
+    await asyncio.sleep(120)  # esperar arranque completo
+    while True:
+        try:
+            pendientes = await obtener_visitas_para_recordatorio()
+            for item in pendientes:
+                telefono = item["telefono"]
+                nombre   = item["nombre"]
+                hora     = item["hora"]
+                tipo     = item["tipo"]
+                idioma   = await obtener_idioma(telefono) or "es"
+                tel_envio = telefono.lstrip("+")
+
+                try:
+                    from datetime import datetime as _dt
+                    d = _dt.strptime(item["fecha"], "%Y-%m-%d")
+                    if idioma == "en":
+                        fecha_fmt = f"{_MESES_EN[d.month-1]} {d.day}, {d.year}"
+                        if tipo == "24h":
+                            msg = (
+                                f"Hi {nombre}! 👋 Reminder: tomorrow you have a visit to "
+                                f"Torre Fuerte Apartments:\n\n"
+                                f"📅 {fecha_fmt}\n⏰ {hora}\n\n"
+                                f"We look forward to seeing you! To reschedule, just reply here."
+                            )
+                        else:
+                            msg = (
+                                f"Hi {nombre}! ⏰ Your visit to Torre Fuerte Apartments "
+                                f"is in about 1 hour ({hora}). See you soon! 🏠✨"
+                            )
+                    else:
+                        fecha_fmt = f"{d.day} de {_MESES_ES[d.month-1]} de {d.year}"
+                        if tipo == "24h":
+                            msg = (
+                                f"Hola {nombre}! 👋 Te recordamos que mañana tienes una visita "
+                                f"al proyecto Torre Fuerte:\n\n"
+                                f"📅 {fecha_fmt}\n⏰ {hora}\n\n"
+                                f"¡Te esperamos! Si necesitas reprogramar, escríbenos aquí."
+                            )
+                        else:
+                            msg = (
+                                f"Hola {nombre}! ⏰ En aproximadamente 1 hora tienes tu visita "
+                                f"a Torre Fuerte ({hora}). ¡Nos vemos pronto! 🏠✨"
+                            )
+                except Exception as e:
+                    logger.error(f"Error formateando recordatorio para visita {item['id']}: {e}")
+                    continue
+
+                if proveedor:
+                    ok = await proveedor.enviar_mensaje(tel_envio, msg)
+                    if ok:
+                        await marcar_recordatorio(item["id"], tipo)
+                        await guardar_mensaje(telefono, "assistant", msg)
+                        logger.info(f"Recordatorio {tipo} enviado a {nombre} ({telefono})")
+                    else:
+                        logger.error(f"Fallo envío recordatorio {tipo} a {telefono}")
+
+        except Exception as e:
+            logger.error(f"Error en tarea recordatorios: {e}")
+
+        await asyncio.sleep(900)  # revisar cada 15 minutos
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global proveedor
@@ -218,6 +289,7 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_tarea_handoff_inactivos())
     asyncio.create_task(_tarea_seguimiento_leads())
+    asyncio.create_task(_tarea_recordatorios_visitas())
 
     logger.info("Base de datos inicializada")
     logger.info(f"Servidor corriendo en puerto {PORT}")

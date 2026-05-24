@@ -119,6 +119,16 @@ class Visita(Base):
     creado_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class RecordatorioEnviado(Base):
+    """Registro de recordatorios de visita ya enviados."""
+    __tablename__ = "recordatorios_enviados"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    visita_id: Mapped[int] = mapped_column(Integer, index=True)
+    tipo: Mapped[str] = mapped_column(String(10))  # "24h" o "1h"
+    enviado_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class NotaLead(Base):
     """Notas internas del asesor sobre un lead."""
     __tablename__ = "notas_lead"
@@ -687,6 +697,51 @@ async def cancelar_visita(visita_id: int) -> None:
         if v:
             v.estado = "cancelada"
             await session.commit()
+
+
+async def obtener_visitas_para_recordatorio() -> list[dict]:
+    """Retorna visitas confirmadas que necesitan recordatorio 24h o 1h antes (aún no enviado)."""
+    from datetime import timedelta
+    ahora = datetime.utcnow() + _COL
+    en_23h   = ahora + timedelta(hours=23)
+    en_25h   = ahora + timedelta(hours=25)
+    en_45min = ahora + timedelta(minutes=45)
+    en_75min = ahora + timedelta(minutes=75)
+
+    resultados = []
+    async with async_session() as session:
+        result = await session.execute(
+            select(Visita).where(or_(Visita.estado == "confirmada", Visita.estado.is_(None)))
+        )
+        for v in result.scalars().all():
+            try:
+                dt_visita = datetime.strptime(f"{v.fecha} {v.hora}", "%Y-%m-%d %H:%M")
+            except Exception:
+                continue
+            for tipo, lo, hi in [("24h", en_23h, en_25h), ("1h", en_45min, en_75min)]:
+                if lo <= dt_visita <= hi:
+                    ya = await session.scalar(
+                        select(func.count(RecordatorioEnviado.id)).where(
+                            RecordatorioEnviado.visita_id == v.id,
+                            RecordatorioEnviado.tipo == tipo,
+                        )
+                    )
+                    if not ya:
+                        resultados.append({
+                            "id": v.id, "telefono": v.telefono,
+                            "nombre": v.nombre or "Lead",
+                            "fecha": v.fecha, "hora": v.hora, "tipo": tipo,
+                        })
+    return resultados
+
+
+async def marcar_recordatorio(visita_id: int, tipo: str) -> None:
+    """Registra que el recordatorio de tipo '24h' o '1h' ya fue enviado."""
+    async with async_session() as session:
+        session.add(RecordatorioEnviado(
+            visita_id=visita_id, tipo=tipo, enviado_at=datetime.utcnow()
+        ))
+        await session.commit()
 
 
 # ── Notas del asesor ──────────────────────────────────────────────────────────
