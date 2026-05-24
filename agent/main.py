@@ -210,6 +210,42 @@ _MESES_EN = ["January","February","March","April","May","June",
              "July","August","September","October","November","December"]
 
 
+def _fmt_fecha_notif(fecha: str, idioma: str) -> str:
+    """Formatea YYYY-MM-DD a texto legible en es/en."""
+    try:
+        from datetime import datetime as _dt
+        d = _dt.strptime(fecha, "%Y-%m-%d")
+        if idioma == "en":
+            return f"{_MESES_EN[d.month-1]} {d.day}, {d.year}"
+        return f"{d.day} de {_MESES_ES[d.month-1]} de {d.year}"
+    except Exception:
+        return fecha
+
+
+async def _notificar_visita_asesor(telefono: str, nombre: str, fecha: str, hora: str, notas: str, tipo: str = "nueva") -> None:
+    """Envía WhatsApp al asesor cuando el bot agenda o reagenda una visita."""
+    if not ASESOR_WHATSAPP or not proveedor:
+        return
+    fecha_fmt = _fmt_fecha_notif(fecha, "es")
+    if tipo == "reagenda":
+        titulo = "🔄 VISITA REAGENDADA (via WhatsApp)"
+    else:
+        titulo = "📅 NUEVA VISITA AGENDADA (via WhatsApp)"
+    msg = (
+        f"{titulo}\n\n"
+        f"👤 Lead: {nombre or 'Sin nombre'}\n"
+        f"📱 Tel: {telefono}\n"
+        f"📅 Fecha: {fecha_fmt}\n"
+        f"⏰ Hora: {hora}"
+        + (f"\n📝 Notas: {notas}" if notas else "")
+        + f"\n\nVer chat: {BASE_URL}/admin/chat/{telefono}"
+    )
+    try:
+        await proveedor.enviar_mensaje(ASESOR_WHATSAPP.lstrip("+"), msg)
+    except Exception as e:
+        logger.warning(f"No se pudo notificar visita al asesor: {e}")
+
+
 async def _tarea_recordatorios_visitas() -> None:
     """Tarea background: envía recordatorios de visita 24h y 1h antes."""
     await asyncio.sleep(120)  # esperar arranque completo
@@ -505,7 +541,6 @@ async def webhook_handler(request: Request):
             # Visita: Claude emitió [VISITA] → guardar en BD
             if visita_data:
                 nombre_v = visita_data["nombre"]
-                # Preferir el nombre del perfil si ya está registrado
                 if perfil and perfil.get("nombre"):
                     nombre_v = perfil["nombre"]
                 await guardar_visita(
@@ -519,6 +554,10 @@ async def webhook_handler(request: Request):
                     f"Visita auto-agendada: {nombre_v} ({msg.telefono}) "
                     f"{visita_data['fecha']} {visita_data['hora']}"
                 )
+                await _notificar_visita_asesor(
+                    msg.telefono, nombre_v,
+                    visita_data["fecha"], visita_data["hora"], visita_data["notas"],
+                )
 
             # Cancelación de visita: Claude emitió [CANCELAR_VISITA:id]
             if cancelar_visita_id:
@@ -529,6 +568,12 @@ async def webhook_handler(request: Request):
             if reagendar_data:
                 await reagendar_visita(reagendar_data["id"], reagendar_data["fecha"], reagendar_data["hora"])
                 logger.info(f"Visita {reagendar_data['id']} reagendada a {reagendar_data['fecha']} {reagendar_data['hora']} ({msg.telefono})")
+                nombre_r = (perfil or {}).get("nombre", "") or "Lead"
+                await _notificar_visita_asesor(
+                    msg.telefono, nombre_r,
+                    reagendar_data["fecha"], reagendar_data["hora"], "",
+                    tipo="reagenda",
+                )
 
             # Handoff: Claude emitió [HANDOFF] → transferir a asesor
             if razon_handoff and not await esta_en_handoff(msg.telefono):
