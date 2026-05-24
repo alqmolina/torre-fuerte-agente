@@ -430,3 +430,37 @@ def registrar_visita(telefono: str, nombre: str, fecha: str, hora: str) -> dict:
         "confirmado": True,
         "mensaje": f"Visita agendada para el {fecha} a las {hora}."
     }
+
+
+# ── Calculadora hipotecaria ───────────────────────────────────────────────────
+
+def _fmt_cop(v: float) -> str:
+    """Formatea un valor en pesos colombianos: $1.288.200.000"""
+    return "$" + f"{v:,.0f}".replace(",", ".")
+
+
+def calcular_hipoteca(precio_cop: float, entrada_pct: float, plazo_anos: int, tasa_anual_pct: float) -> str:
+    """
+    Calcula la cuota mensual estimada de un crédito hipotecario en Colombia.
+    Retorna un resumen con todos los datos del cálculo.
+    """
+    entrada = precio_cop * (entrada_pct / 100)
+    credito = precio_cop - entrada
+    r = (tasa_anual_pct / 100) / 12
+    n = int(plazo_anos) * 12
+    if r == 0:
+        cuota = credito / n
+    else:
+        cuota = credito * r * (1 + r) ** n / ((1 + r) ** n - 1)
+    total = cuota * n
+    intereses = total - credito
+    return (
+        f"Precio del apartamento: {_fmt_cop(precio_cop)}\n"
+        f"Cuota inicial ({entrada_pct:.0f}%): {_fmt_cop(entrada)}\n"
+        f"Monto del crédito: {_fmt_cop(credito)}\n"
+        f"Tasa de interés: {tasa_anual_pct}% anual\n"
+        f"Plazo: {plazo_anos} años ({n} cuotas)\n"
+        f"CUOTA MENSUAL ESTIMADA: {_fmt_cop(cuota)}\n"
+        f"Total pagado en {plazo_anos} años: {_fmt_cop(total)}\n"
+        f"Total de intereses: {_fmt_cop(intereses)}"
+    )

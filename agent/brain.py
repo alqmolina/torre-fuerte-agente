@@ -12,6 +12,49 @@ logger = logging.getLogger("agentkit")
 
 client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
+_TOOLS = [
+    {
+        "name": "calcular_hipoteca",
+        "description": (
+            "Calcula la cuota mensual exacta de un crédito hipotecario en Colombia. "
+            "Úsala cuando el lead pregunte por financiamiento, crédito, cuota mensual, "
+            "o quiera saber cuánto pagaría por mes por un apartamento. "
+            "Si no especifica tasa, usa 12.5% anual (tasa típica Colombia 2025). "
+            "Si no especifica plazo, calcula para 20 Y 30 años como comparación. "
+            "Si no especifica cuota inicial, usa 30% (mínimo requerido en Colombia para vivienda no VIS)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "precio_cop": {
+                    "type": "number",
+                    "description": "Precio del apartamento en pesos colombianos (COP)",
+                },
+                "entrada_pct": {
+                    "type": "number",
+                    "description": "Porcentaje de cuota inicial (ej: 30 para el 30%)",
+                },
+                "plazo_anos": {
+                    "type": "integer",
+                    "description": "Plazo del crédito en años (10, 15, 20 o 30)",
+                },
+                "tasa_anual_pct": {
+                    "type": "number",
+                    "description": "Tasa de interés anual en porcentaje (ej: 12.5)",
+                },
+            },
+            "required": ["precio_cop", "entrada_pct", "plazo_anos", "tasa_anual_pct"],
+        },
+    }
+]
+
+
+def _ejecutar_herramienta(nombre: str, params: dict) -> str:
+    if nombre == "calcular_hipoteca":
+        from agent.tools import calcular_hipoteca
+        return calcular_hipoteca(**params)
+    return f"Herramienta '{nombre}' no encontrada."
+
 
 def cargar_config_prompts() -> dict:
     """Lee toda la configuración desde config/prompts.yaml."""
@@ -127,6 +170,21 @@ async def generar_respuesta(mensaje: str, historial: list[dict], perfil: dict | 
             "Solo emite [HANDOFF] una vez por conversación. Nunca en medio del texto."
         )
 
+    if idioma == "en":
+        system_prompt += (
+            "\n\n## Mortgage calculator\n"
+            "You have access to a mortgage calculator tool. Use it proactively when the lead "
+            "asks about financing, monthly payments, or how much an apartment costs on credit. "
+            "Always show at least two scenarios (e.g. 20 and 30 years) when the lead hasn't specified a term."
+        )
+    else:
+        system_prompt += (
+            "\n\n## Calculadora hipotecaria\n"
+            "Tienes acceso a una calculadora hipotecaria. Úsala proactivamente cuando el lead "
+            "pregunte por financiamiento, cuota mensual o cómo pagaría un apartamento a crédito. "
+            "Muestra siempre al menos dos escenarios (ej: 20 y 30 años) si el lead no especificó plazo."
+        )
+
     if perfil and perfil.get("nombre"):
         if idioma == "en":
             datos = (
@@ -167,10 +225,32 @@ async def generar_respuesta(mensaje: str, historial: list[dict], perfil: dict | 
             model="claude-sonnet-4-6",
             max_tokens=1024,
             system=system_prompt,
-            messages=mensajes
+            messages=mensajes,
+            tools=_TOOLS,
         )
 
-        respuesta = response.content[0].text
+        # Manejar tool use (ej: calcular_hipoteca)
+        if response.stop_reason == "tool_use":
+            tool_block = next((b for b in response.content if b.type == "tool_use"), None)
+            if tool_block:
+                resultado = _ejecutar_herramienta(tool_block.name, tool_block.input)
+                logger.info(f"Tool use: {tool_block.name}({tool_block.input}) → {resultado[:80]}")
+                mensajes.append({"role": "assistant", "content": response.content})
+                mensajes.append({
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": tool_block.id, "content": resultado}],
+                })
+                response = await client.messages.create(
+                    model="claude-sonnet-4-6",
+                    max_tokens=1024,
+                    system=system_prompt,
+                    messages=mensajes,
+                    tools=_TOOLS,
+                )
+
+        respuesta = next((b.text for b in response.content if b.type == "text"), "")
+        if not respuesta:
+            respuesta = obtener_mensaje_fallback()
         logger.info(f"Respuesta generada ({response.usage.input_tokens} in / {response.usage.output_tokens} out)")
         return respuesta
 
