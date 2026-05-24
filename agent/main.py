@@ -22,7 +22,7 @@ from agent.memory import (
     obtener_leads_pendientes_handoff,
     mensaje_ya_procesado, marcar_mensaje_procesado,
     obtener_leads_para_seguimiento, registrar_seguimiento,
-    guardar_visita,
+    guardar_visita, cancelar_visita,
     obtener_visitas_para_recordatorio, marcar_recordatorio,
 )
 import agent.admin as admin_module
