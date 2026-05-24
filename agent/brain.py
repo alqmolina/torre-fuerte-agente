@@ -182,19 +182,44 @@ async def generar_respuesta(mensaje: str, historial: list[dict], perfil: dict | 
             "Solo emite [HANDOFF] una vez por conversación. Nunca en medio del texto."
         )
 
+    # Inyectar precios de apartamentos para que Claude pueda llamar la calculadora
+    try:
+        from agent.tools import obtener_disponibilidad
+        aptos = obtener_disponibilidad()
+        lineas_precio = "\n".join(
+            f"  • {a['apto']}: ${a['precio']:,} COP ({a['hab']} hab · {a['area']} m²)"
+            for a in aptos
+        )
+    except Exception:
+        lineas_precio = ""
+
     if idioma == "en":
         system_prompt += (
-            "\n\n## Mortgage calculator\n"
-            "You have access to a mortgage calculator tool. Use it proactively when the lead "
-            "asks about financing, monthly payments, or how much an apartment costs on credit. "
-            "Always show at least two scenarios (e.g. 20 and 30 years) when the lead hasn't specified a term."
+            "\n\n## Apartment prices (use these for mortgage calculations)\n"
+            + lineas_precio
+            + "\n\n## Mortgage calculator — MANDATORY\n"
+            "You MUST call the `calcular_hipoteca` tool whenever the lead asks about:\n"
+            "- Monthly payments, installments, or how much they would pay per month\n"
+            "- Financing, mortgage, or credit options\n"
+            "- Whether they can afford an apartment\n"
+            "NEVER estimate or approximate mortgage payments with text — always call the tool.\n"
+            "If the lead hasn't specified a term, calculate for BOTH 20 and 30 years (call the tool twice).\n"
+            "If no down payment specified, use 30% (Colombia minimum for non-VIS housing).\n"
+            "If no rate specified, use 12.5% annual (typical Colombia 2025)."
         )
     else:
         system_prompt += (
-            "\n\n## Calculadora hipotecaria\n"
-            "Tienes acceso a una calculadora hipotecaria. Úsala proactivamente cuando el lead "
-            "pregunte por financiamiento, cuota mensual o cómo pagaría un apartamento a crédito. "
-            "Muestra siempre al menos dos escenarios (ej: 20 y 30 años) si el lead no especificó plazo."
+            "\n\n## Precios de apartamentos (úsalos para los cálculos hipotecarios)\n"
+            + lineas_precio
+            + "\n\n## Calculadora hipotecaria — OBLIGATORIO\n"
+            "DEBES llamar la herramienta `calcular_hipoteca` siempre que el lead pregunte:\n"
+            "- Cuota mensual, cuánto pagaría al mes, valor de la cuota\n"
+            "- Financiamiento, crédito hipotecario, opciones de pago\n"
+            "- Si puede pagar un apartamento o qué necesita para comprarlo\n"
+            "NUNCA estimes ni aproximes cuotas hipotecarias con texto — siempre usa la herramienta.\n"
+            "Si el lead no especificó plazo, calcula para 20 Y 30 años (llama la herramienta dos veces).\n"
+            "Si no especificó cuota inicial, usa 30% (mínimo en Colombia para vivienda no VIS).\n"
+            "Si no especificó tasa, usa 12.5% anual (tasa típica Colombia 2025)."
         )
 
     if perfil and perfil.get("nombre"):
@@ -241,24 +266,27 @@ async def generar_respuesta(mensaje: str, historial: list[dict], perfil: dict | 
             tools=_TOOLS,
         )
 
-        # Manejar tool use (ej: calcular_hipoteca)
-        if response.stop_reason == "tool_use":
-            tool_block = next((b for b in response.content if b.type == "tool_use"), None)
-            if tool_block:
-                resultado = _ejecutar_herramienta(tool_block.name, tool_block.input)
-                logger.info(f"Tool use: {tool_block.name}({tool_block.input}) → {resultado[:80]}")
-                mensajes.append({"role": "assistant", "content": _content_a_dicts(response.content)})
-                mensajes.append({
-                    "role": "user",
-                    "content": [{"type": "tool_result", "tool_use_id": tool_block.id, "content": resultado}],
-                })
-                response = await client.messages.create(
-                    model="claude-sonnet-4-6",
-                    max_tokens=1536,
-                    system=system_prompt,
-                    messages=mensajes,
-                    tools=_TOOLS,
-                )
+        # Manejar tool use — loop hasta que Claude termine (puede llamar la herramienta varias veces)
+        for _ in range(5):  # máximo 5 iteraciones para evitar loops infinitos
+            if response.stop_reason != "tool_use":
+                break
+            tool_blocks = [b for b in response.content if b.type == "tool_use"]
+            if not tool_blocks:
+                break
+            mensajes.append({"role": "assistant", "content": _content_a_dicts(response.content)})
+            resultados = []
+            for tb in tool_blocks:
+                resultado = _ejecutar_herramienta(tb.name, tb.input)
+                logger.info(f"Tool use: {tb.name}({tb.input}) → {resultado[:80]}")
+                resultados.append({"type": "tool_result", "tool_use_id": tb.id, "content": resultado})
+            mensajes.append({"role": "user", "content": resultados})
+            response = await client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=1536,
+                system=system_prompt,
+                messages=mensajes,
+                tools=_TOOLS,
+            )
 
         respuesta = next((b.text for b in response.content if b.type == "text"), "")
         if not respuesta:
