@@ -45,6 +45,7 @@ from agent.memory import (
     guardar_evento_id,
     obtener_evento_id,
     borrar_evento_id,
+    guardar_lead,
     obtener_idioma,
     buscar_leads,
     obtener_actividad_lead,
@@ -318,6 +319,7 @@ async def admin_index(request: Request):
       <div style="font-size:13px;opacity:0.7;margin-top:2px">Conversaciones en transferencia</div>
     </div>
     {badge}
+    <a href="/admin/leads/nuevo" style="color:white;background:#27ae60;border-radius:6px;padding:5px 10px;font-size:12px;text-decoration:none;font-weight:600;margin-right:8px;white-space:nowrap">➕ Lead</a>
     <a href="/admin/buscar" style="color:rgba(255,255,255,0.8);font-size:12px;text-decoration:none;margin-right:12px">🔍 Buscar</a>
     <a href="/admin/visitas" style="color:rgba(255,255,255,0.8);font-size:12px;text-decoration:none;margin-right:12px">📅 Visitas</a>
     <a href="/admin/broadcast" style="color:rgba(255,255,255,0.8);font-size:12px;text-decoration:none;margin-right:12px">📢 Broadcast</a>
@@ -2093,6 +2095,162 @@ async def visita_completar(visita_id: int, request: Request):
     referer = request.headers.get("referer", "/admin/visitas")
     return RedirectResponse(referer, status_code=303)
 
+
+
+@router.get("/leads/nuevo", response_class=HTMLResponse)
+async def lead_nuevo_form(request: Request):
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
+
+    alerta = ""
+
+    return f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nuevo Lead — Torre Fuerte</title>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; }}
+    .header {{ background: #1a3c5e; color: white; padding: 16px 20px; display: flex; align-items: center; gap: 12px; }}
+    .container {{ max-width: 560px; margin: 0 auto; padding: 20px 16px; }}
+    .card {{ background: white; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }}
+    label {{ display: block; font-size: 13px; font-weight: 600; color: #1a3c5e; margin-bottom: 5px; margin-top: 14px; }}
+    label:first-of-type {{ margin-top: 0; }}
+    input, select, textarea {{ width: 100%; padding: 10px 12px; border: 1px solid #d0dce8; border-radius: 8px;
+      font-size: 14px; font-family: inherit; background: #fafcff; }}
+    input:focus, select:focus, textarea:focus {{ outline: none; border-color: #1a3c5e; }}
+    textarea {{ resize: vertical; min-height: 80px; }}
+    .row-2 {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }}
+    .btn {{ background: #1a3c5e; color: white; border: none; border-radius: 8px; padding: 12px 20px;
+      font-size: 14px; font-weight: 600; cursor: pointer; width: 100%; margin-top: 20px; }}
+    .btn:hover {{ background: #15304e; }}
+    .btn-sec {{ display: block; text-align: center; color: #888; font-size: 13px; margin-top: 12px; text-decoration: none; }}
+    .section {{ font-size: 12px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 0.5px;
+      margin-top: 20px; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid #eee; }}
+    .section:first-of-type {{ margin-top: 0; }}
+    .req {{ color: #e74c3c; }}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/admin" style="color:white;text-decoration:none;font-size:20px">←</a>
+    <div style="flex:1">
+      <div style="font-size:18px;font-weight:600">Torre Fuerte · Nuevo Lead</div>
+      <div style="font-size:12px;opacity:0.7">Registro manual de prospecto</div>
+    </div>
+  </div>
+  <div class="container">
+    <div class="card">
+      {alerta}
+      <form method="post" action="/admin/leads/nuevo">
+        <p class="section">Datos de contacto</p>
+        <label>Nombre completo <span class="req">*</span></label>
+        <input type="text" name="nombre" placeholder="Ej: María García" required autofocus>
+        <label>Teléfono (con código de país) <span class="req">*</span></label>
+        <input type="tel" name="telefono" placeholder="Ej: 573001234567" required>
+        <label>Email</label>
+        <input type="email" name="email" placeholder="Ej: maria@email.com">
+
+        <p class="section">Interés</p>
+        <div class="row-2">
+          <div>
+            <label>Apartamento de interés</label>
+            <input type="text" name="apto" placeholder="Ej: 401, PH-01">
+          </div>
+          <div>
+            <label>Habitaciones</label>
+            <select name="habitaciones">
+              <option value="">No especificado</option>
+              <option value="1">1 habitación</option>
+              <option value="2">2 habitaciones</option>
+              <option value="3">3 habitaciones</option>
+              <option value="4+">4+ habitaciones</option>
+            </select>
+          </div>
+        </div>
+
+        <p class="section">Calificación</p>
+        <div class="row-2">
+          <div>
+            <label>Temperatura</label>
+            <select name="temperatura">
+              <option value="frio">❄️ Frío</option>
+              <option value="tibio">🌤️ Tibio</option>
+              <option value="caliente">🔥 Caliente</option>
+            </select>
+          </div>
+          <div>
+            <label>Intención</label>
+            <select name="intencion">
+              <option value="">No especificado</option>
+              <option value="compra">Compra</option>
+              <option value="arriendo">Arriendo</option>
+              <option value="inversion">Inversión</option>
+              <option value="otro">Otro</option>
+            </select>
+          </div>
+        </div>
+
+        <p class="section">Nota inicial</p>
+        <textarea name="nota" placeholder="Ej: Referido por Carlos López. Interesado en financiación..."></textarea>
+
+        <button type="submit" class="btn">💾 Crear lead</button>
+      </form>
+      <a href="/admin" class="btn-sec">Cancelar</a>
+    </div>
+  </div>
+</body>
+</html>"""
+
+
+@router.post("/leads/nuevo")
+async def lead_nuevo_save(
+    request: Request,
+    nombre: str = Form(...),
+    telefono: str = Form(...),
+    email: str = Form(default=""),
+    apto: str = Form(default=""),
+    habitaciones: str = Form(default=""),
+    temperatura: str = Form(default="frio"),
+    intencion: str = Form(default=""),
+    nota: str = Form(default=""),
+):
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
+
+    tel = telefono.strip().lstrip("+").replace(" ", "")
+
+    # Verificar si ya existe
+    from agent.memory import obtener_perfil_lead as _get_lead
+    existente = await _get_lead(tel)
+    if existente:
+        logger.info(f"Lead manual: {tel} ya existe, redirigiendo a chat")
+        return RedirectResponse(f"/admin/chat/{tel}", status_code=303)
+
+    try:
+        await guardar_lead(
+            telefono=tel,
+            nombre=nombre.strip(),
+            email=email.strip(),
+            apto=apto.strip(),
+            habitaciones=habitaciones.strip(),
+            temperatura=temperatura.strip() or "frio",
+            intencion=intencion.strip(),
+        )
+    except Exception as e:
+        logger.error(f"Error creando lead manual {tel}: {e}")
+        return RedirectResponse(f"/admin/leads/nuevo?msg=duplicado", status_code=303)
+
+    if nota.strip():
+        try:
+            await guardar_nota(tel, nota.strip(), asesor="asesor")
+        except Exception as e:
+            logger.warning(f"No se pudo guardar nota del lead manual {tel}: {e}")
+
+    logger.info(f"Lead manual creado: {nombre.strip()} ({tel})")
+    return RedirectResponse(f"/admin/chat/{tel}", status_code=303)
 
 
 @router.get("/lead/{telefono}/historial", response_class=HTMLResponse)
