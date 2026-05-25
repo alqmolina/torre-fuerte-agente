@@ -72,8 +72,9 @@ def _detectar_idioma(texto: str) -> str:
     es = len(words & _ES_WORDS)
     return "en" if en > es else "es"
 
-# El proveedor se inicializa en lifespan, no al importar el módulo
+# Los proveedores se inicializan en lifespan, no al importar el módulo
 proveedor = None
+proveedor_messenger = None
 
 
 async def _notificar_handoff(telefono: str, nombre: str, temperatura: str, razon: str, idioma: str, apto: str = "", habitaciones: str = "", email_lead: str = "", intencion: str = "", resumen: str = "") -> None:
@@ -348,8 +349,13 @@ async def lifespan(app: FastAPI):
 
     from agent.providers import obtener_proveedor
     proveedor = obtener_proveedor()
-
     admin_module.proveedor = proveedor
+
+    global proveedor_messenger
+    if os.getenv("META_PAGE_TOKEN"):
+        from agent.providers.messenger import ProveedorMessenger
+        proveedor_messenger = ProveedorMessenger()
+        logger.info("Proveedor Messenger/Instagram inicializado")
 
     asyncio.create_task(_tarea_handoff_inactivos())
     asyncio.create_task(_tarea_seguimiento_leads())
@@ -439,12 +445,201 @@ async def webhook_verificacion(request: Request):
     return {"status": "ok"}
 
 
+async def _procesar_mensaje_canal(msg, prov) -> None:
+    """Pipeline completo de procesamiento de un mensaje entrante (cualquier canal)."""
+    logger.info(f"Mensaje de {msg.telefono}: {msg.texto}")
+
+    # Si hay handoff activo, el bot cede el turno al asesor humano
+    if await esta_en_handoff(msg.telefono):
+        await guardar_mensaje(msg.telefono, "user", msg.texto)
+        if await debe_enviar_aviso_handoff(msg.telefono):
+            idioma_h = await obtener_idioma(msg.telefono) or "es"
+            perfil_h = await obtener_perfil_lead(msg.telefono)
+            nombre_h = perfil_h.get("nombre", "") if perfil_h else ""
+            if idioma_h == "en":
+                aviso = (
+                    f"Hi{' ' + nombre_h if nombre_h else ''}! 😊 "
+                    f"You already have an advisor assigned who will contact you shortly."
+                )
+            else:
+                aviso = (
+                    f"¡Hola{' ' + nombre_h if nombre_h else ''}! 😊 "
+                    f"Ya tienes un asesor asignado que te contactará muy pronto."
+                )
+            await prov.enviar_mensaje(msg.telefono, aviso)
+            await registrar_aviso_handoff(msg.telefono)
+        return
+
+    historial = await obtener_historial(msg.telefono)
+    idioma = await obtener_idioma(msg.telefono)
+
+    if len(historial) == 0:
+        if idioma is None:
+            idioma = _detectar_idioma(msg.texto)
+            await guardar_idioma(msg.telefono, idioma)
+        url_logo = f"{BASE_URL}/assets/TF-LOGO.jpg"
+        await prov.enviar_media(msg.telefono, url_logo)
+        logger.info("Logo enviado al inicio de conversación")
+    elif idioma is None:
+        idioma = _detectar_idioma(msg.texto)
+        await guardar_idioma(msg.telefono, idioma)
+
+    perfil = await obtener_perfil_lead(msg.telefono)
+    respuesta_raw = await generar_respuesta(msg.texto, historial, perfil, idioma, telefono=msg.telefono)
+
+    texto_sin_planos, codigos_plano = extraer_marcadores_plano(respuesta_raw)
+    texto_sin_renders, claves_render = extraer_marcadores_render(texto_sin_planos)
+    texto_sin_lead, lead_data = extraer_marcador_lead(texto_sin_renders)
+    texto_sin_visita, visita_data = extraer_marcador_visita(texto_sin_lead)
+    texto_sin_cancelar, cancelar_visita_id = extraer_marcador_cancelar_visita(texto_sin_visita)
+    texto_sin_reagendar, reagendar_data = extraer_marcador_reagendar_visita(texto_sin_cancelar)
+    texto_limpio, razon_handoff = extraer_marcador_handoff(texto_sin_reagendar)
+
+    texto_a_guardar = texto_limpio
+    if codigos_plano:
+        texto_a_guardar += f"\n[Sistema: plano(s) enviado(s): {', '.join(codigos_plano)}]"
+    if claves_render:
+        texto_a_guardar += f"\n[Sistema: renders enviados: {', '.join(claves_render)}]"
+
+    await guardar_mensaje(msg.telefono, "user", msg.texto)
+    await guardar_mensaje(msg.telefono, "assistant", texto_a_guardar)
+
+    if texto_limpio:
+        await prov.enviar_mensaje(msg.telefono, texto_limpio)
+
+    for codigo in codigos_plano:
+        ruta = obtener_plano(codigo)
+        if ruta:
+            url = f"{BASE_URL}/planos/{os.path.basename(ruta)}"
+            await prov.enviar_media(msg.telefono, url, f"Plano apartamento {codigo.upper()}")
+            logger.info(f"Plano enviado: {url}")
+        else:
+            await prov.enviar_mensaje(
+                msg.telefono,
+                f"Lo siento, no encontré el plano del apartamento {codigo}."
+            )
+
+    for clave in claves_render:
+        urls = obtener_urls_renders(clave, BASE_URL)
+        if urls:
+            for url in urls:
+                await prov.enviar_media(msg.telefono, url)
+                logger.info(f"Render enviado: {url}")
+                await asyncio.sleep(0.5)
+        else:
+            await prov.enviar_mensaje(msg.telefono, "Lo siento, no encontré renders para esa opción.")
+
+    if lead_data and not await lead_existe(msg.telefono):
+        await guardar_lead(
+            msg.telefono,
+            lead_data["nombre"],
+            lead_data.get("email", ""),
+            lead_data.get("apto", ""),
+            lead_data.get("habitaciones", ""),
+            lead_data.get("temperatura", ""),
+            lead_data.get("intencion", ""),
+        )
+        enviar_email_lead(
+            msg.telefono,
+            lead_data["nombre"],
+            lead_data.get("email", ""),
+            lead_data.get("apto", ""),
+            lead_data.get("habitaciones", ""),
+            lead_data.get("temperatura", ""),
+            lead_data.get("intencion", ""),
+        )
+        logger.info(f"Lead registrado: {lead_data['nombre']} ({msg.telefono})")
+        todos_los_leads = await obtener_todos_los_leads()
+        exportar_leads_excel(todos_los_leads)
+
+    if visita_data:
+        nombre_v = visita_data["nombre"]
+        if perfil and perfil.get("nombre"):
+            nombre_v = perfil["nombre"]
+        visita_id = await guardar_visita(
+            msg.telefono,
+            nombre_v,
+            visita_data["fecha"],
+            visita_data["hora"],
+            visita_data["notas"],
+        )
+        logger.info(
+            f"Visita auto-agendada: {nombre_v} ({msg.telefono}) "
+            f"{visita_data['fecha']} {visita_data['hora']}"
+        )
+        await _notificar_visita_asesor(
+            msg.telefono, nombre_v,
+            visita_data["fecha"], visita_data["hora"], visita_data["notas"],
+        )
+        try:
+            event_id = crear_evento_visita(visita_id, nombre_v, msg.telefono,
+                visita_data["fecha"], visita_data["hora"], visita_data["notas"])
+            if event_id:
+                await guardar_evento_id(visita_id, event_id)
+        except Exception as e:
+            logger.error(f"Google Calendar: error creando evento visita {visita_id}: {e}")
+
+    if cancelar_visita_id:
+        await cancelar_visita(cancelar_visita_id)
+        logger.info(f"Visita {cancelar_visita_id} cancelada ({msg.telefono})")
+        await _notificar_visita_asesor(
+            msg.telefono,
+            (perfil or {}).get("nombre", "") or "Lead",
+            "", "", "",
+            tipo="cancela",
+            visita_id=cancelar_visita_id,
+        )
+        try:
+            event_id = await obtener_evento_id(cancelar_visita_id)
+            if event_id:
+                eliminar_evento_visita(event_id)
+                await borrar_evento_id(cancelar_visita_id)
+        except Exception as e:
+            logger.error(f"Google Calendar: error cancelando visita {cancelar_visita_id}: {e}")
+
+    if reagendar_data:
+        await reagendar_visita(reagendar_data["id"], reagendar_data["fecha"], reagendar_data["hora"])
+        logger.info(f"Visita {reagendar_data['id']} reagendada a {reagendar_data['fecha']} {reagendar_data['hora']} ({msg.telefono})")
+        nombre_r = (perfil or {}).get("nombre", "") or "Lead"
+        await _notificar_visita_asesor(
+            msg.telefono, nombre_r,
+            reagendar_data["fecha"], reagendar_data["hora"], "",
+            tipo="reagenda",
+        )
+        try:
+            event_id = await obtener_evento_id(reagendar_data["id"])
+            if event_id:
+                actualizar_evento_visita(event_id, nombre_r, msg.telefono,
+                    reagendar_data["fecha"], reagendar_data["hora"])
+        except Exception as e:
+            logger.error(f"Google Calendar: error reagendando visita {reagendar_data['id']}: {e}")
+
+    if razon_handoff and not await esta_en_handoff(msg.telefono):
+        perfil_h = await obtener_perfil_lead(msg.telefono)
+        nombre_h = (perfil_h or lead_data or {}).get("nombre", "")
+        temperatura_h = (perfil_h or lead_data or {}).get("temperatura", "tibio")
+        apto_h = (perfil_h or lead_data or {}).get("apto", "")
+        hab_h = (perfil_h or lead_data or {}).get("habitaciones", "")
+        email_h = (perfil_h or lead_data or {}).get("email", "")
+        intencion_h = (perfil_h or lead_data or {}).get("intencion", "")
+
+        historial_h = await obtener_historial(msg.telefono, limite=30)
+        resumen_h = await generar_resumen_handoff(historial_h, nombre_h, temperatura_h, idioma)
+
+        await activar_handoff(msg.telefono, razon_handoff, nombre_h, resumen_h)
+        await registrar_aviso_handoff(msg.telefono)
+        await _notificar_handoff(
+            msg.telefono, nombre_h, temperatura_h, razon_handoff,
+            idioma, apto_h, hab_h, email_h, intencion_h, resumen_h,
+        )
+        logger.info(f"Handoff activado para {msg.telefono} — razón: {razon_handoff}")
+
+    logger.info(f"Respuesta enviada a {msg.telefono}")
+
+
 @app.post("/webhook")
 async def webhook_handler(request: Request):
-    """
-    Recibe mensajes de WhatsApp via Twilio.
-    Procesa respuesta de Claude y envía texto + planos + renders según corresponda.
-    """
+    """Recibe mensajes de WhatsApp y los procesa con el pipeline del agente."""
     try:
         mensajes = await proveedor.parsear_webhook(request)
 
@@ -458,202 +653,48 @@ async def webhook_handler(request: Request):
                 continue
             await marcar_mensaje_procesado(msg.mensaje_id)
 
-            logger.info(f"Mensaje de {msg.telefono}: {msg.texto}")
-
-            # Si hay handoff activo, el bot cede el turno al asesor humano
-            if await esta_en_handoff(msg.telefono):
-                await guardar_mensaje(msg.telefono, "user", msg.texto)
-                if await debe_enviar_aviso_handoff(msg.telefono):
-                    idioma_h = await obtener_idioma(msg.telefono) or "es"
-                    perfil_h = await obtener_perfil_lead(msg.telefono)
-                    nombre_h = perfil_h.get("nombre", "") if perfil_h else ""
-                    if idioma_h == "en":
-                        aviso = (
-                            f"Hi{' ' + nombre_h if nombre_h else ''}! 😊 "
-                            f"You already have an advisor assigned who will contact you shortly."
-                        )
-                    else:
-                        aviso = (
-                            f"¡Hola{' ' + nombre_h if nombre_h else ''}! 😊 "
-                            f"Ya tienes un asesor asignado que te contactará muy pronto."
-                        )
-                    await proveedor.enviar_mensaje(msg.telefono, aviso)
-                    await registrar_aviso_handoff(msg.telefono)
-                continue
-
-            historial = await obtener_historial(msg.telefono)
-            idioma = await obtener_idioma(msg.telefono)
-
-            if len(historial) == 0:
-                if idioma is None:
-                    idioma = _detectar_idioma(msg.texto)
-                    await guardar_idioma(msg.telefono, idioma)
-                url_logo = f"{BASE_URL}/assets/TF-LOGO.jpg"
-                await proveedor.enviar_media(msg.telefono, url_logo)
-                logger.info("Logo enviado al inicio de conversación")
-            elif idioma is None:
-                idioma = _detectar_idioma(msg.texto)
-                await guardar_idioma(msg.telefono, idioma)
-
-            perfil = await obtener_perfil_lead(msg.telefono)
-            respuesta_raw = await generar_respuesta(msg.texto, historial, perfil, idioma, telefono=msg.telefono)
-
-            texto_sin_planos, codigos_plano = extraer_marcadores_plano(respuesta_raw)
-            texto_sin_renders, claves_render = extraer_marcadores_render(texto_sin_planos)
-            texto_sin_lead, lead_data = extraer_marcador_lead(texto_sin_renders)
-            texto_sin_visita, visita_data = extraer_marcador_visita(texto_sin_lead)
-            texto_sin_cancelar, cancelar_visita_id = extraer_marcador_cancelar_visita(texto_sin_visita)
-            texto_sin_reagendar, reagendar_data = extraer_marcador_reagendar_visita(texto_sin_cancelar)
-            texto_limpio, razon_handoff = extraer_marcador_handoff(texto_sin_reagendar)
-
-            # Anotar en el historial qué media se envió para que Claude no lo repita
-            texto_a_guardar = texto_limpio
-            if codigos_plano:
-                texto_a_guardar += f"\n[Sistema: plano(s) enviado(s): {', '.join(codigos_plano)}]"
-            if claves_render:
-                texto_a_guardar += f"\n[Sistema: renders enviados: {', '.join(claves_render)}]"
-
-            await guardar_mensaje(msg.telefono, "user", msg.texto)
-            await guardar_mensaje(msg.telefono, "assistant", texto_a_guardar)
-
-            if texto_limpio:
-                await proveedor.enviar_mensaje(msg.telefono, texto_limpio)
-
-            for codigo in codigos_plano:
-                ruta = obtener_plano(codigo)
-                if ruta:
-                    url = f"{BASE_URL}/planos/{os.path.basename(ruta)}"
-                    await proveedor.enviar_media(msg.telefono, url, f"Plano apartamento {codigo.upper()}")
-                    logger.info(f"Plano enviado: {url}")
-                else:
-                    await proveedor.enviar_mensaje(
-                        msg.telefono,
-                        f"Lo siento, no encontré el plano del apartamento {codigo}."
-                    )
-
-            for clave in claves_render:
-                urls = obtener_urls_renders(clave, BASE_URL)
-                if urls:
-                    for url in urls:
-                        await proveedor.enviar_media(msg.telefono, url)
-                        logger.info(f"Render enviado: {url}")
-                        await asyncio.sleep(0.5)
-                else:
-                    await proveedor.enviar_mensaje(msg.telefono, "Lo siento, no encontré renders para esa opción.")
-
-            if lead_data and not await lead_existe(msg.telefono):
-                await guardar_lead(
-                    msg.telefono,
-                    lead_data["nombre"],
-                    lead_data.get("email", ""),
-                    lead_data.get("apto", ""),
-                    lead_data.get("habitaciones", ""),
-                    lead_data.get("temperatura", ""),
-                    lead_data.get("intencion", ""),
-                )
-                enviar_email_lead(
-                    msg.telefono,
-                    lead_data["nombre"],
-                    lead_data.get("email", ""),
-                    lead_data.get("apto", ""),
-                    lead_data.get("habitaciones", ""),
-                    lead_data.get("temperatura", ""),
-                    lead_data.get("intencion", ""),
-                )
-                logger.info(f"Lead registrado: {lead_data['nombre']} ({msg.telefono})")
-                todos_los_leads = await obtener_todos_los_leads()
-                exportar_leads_excel(todos_los_leads)
-
-            # Visita: Claude emitió [VISITA] → guardar en BD
-            if visita_data:
-                nombre_v = visita_data["nombre"]
-                if perfil and perfil.get("nombre"):
-                    nombre_v = perfil["nombre"]
-                visita_id = await guardar_visita(
-                    msg.telefono,
-                    nombre_v,
-                    visita_data["fecha"],
-                    visita_data["hora"],
-                    visita_data["notas"],
-                )
-                logger.info(
-                    f"Visita auto-agendada: {nombre_v} ({msg.telefono}) "
-                    f"{visita_data['fecha']} {visita_data['hora']}"
-                )
-                await _notificar_visita_asesor(
-                    msg.telefono, nombre_v,
-                    visita_data["fecha"], visita_data["hora"], visita_data["notas"],
-                )
-                try:
-                    event_id = crear_evento_visita(visita_id, nombre_v, msg.telefono,
-                        visita_data["fecha"], visita_data["hora"], visita_data["notas"])
-                    if event_id:
-                        await guardar_evento_id(visita_id, event_id)
-                except Exception as e:
-                    logger.error(f"Google Calendar: error creando evento visita {visita_id}: {e}")
-
-            # Cancelación de visita: Claude emitió [CANCELAR_VISITA:id]
-            if cancelar_visita_id:
-                await cancelar_visita(cancelar_visita_id)
-                logger.info(f"Visita {cancelar_visita_id} cancelada via WhatsApp ({msg.telefono})")
-                await _notificar_visita_asesor(
-                    msg.telefono,
-                    (perfil or {}).get("nombre", "") or "Lead",
-                    "", "", "",
-                    tipo="cancela",
-                    visita_id=cancelar_visita_id,
-                )
-                try:
-                    event_id = await obtener_evento_id(cancelar_visita_id)
-                    if event_id:
-                        eliminar_evento_visita(event_id)
-                        await borrar_evento_id(cancelar_visita_id)
-                except Exception as e:
-                    logger.error(f"Google Calendar: error cancelando visita {cancelar_visita_id}: {e}")
-
-            # Reagendamiento de visita: Claude emitió [REAGENDAR_VISITA:id|fecha|hora]
-            if reagendar_data:
-                await reagendar_visita(reagendar_data["id"], reagendar_data["fecha"], reagendar_data["hora"])
-                logger.info(f"Visita {reagendar_data['id']} reagendada a {reagendar_data['fecha']} {reagendar_data['hora']} ({msg.telefono})")
-                nombre_r = (perfil or {}).get("nombre", "") or "Lead"
-                await _notificar_visita_asesor(
-                    msg.telefono, nombre_r,
-                    reagendar_data["fecha"], reagendar_data["hora"], "",
-                    tipo="reagenda",
-                )
-                try:
-                    event_id = await obtener_evento_id(reagendar_data["id"])
-                    if event_id:
-                        actualizar_evento_visita(event_id, nombre_r, msg.telefono,
-                            reagendar_data["fecha"], reagendar_data["hora"])
-                except Exception as e:
-                    logger.error(f"Google Calendar: error reagendando visita {reagendar_data['id']}: {e}")
-
-            # Handoff: Claude emitió [HANDOFF] → transferir a asesor
-            if razon_handoff and not await esta_en_handoff(msg.telefono):
-                perfil_h = await obtener_perfil_lead(msg.telefono)
-                nombre_h = (perfil_h or lead_data or {}).get("nombre", "")
-                temperatura_h = (perfil_h or lead_data or {}).get("temperatura", "tibio")
-                apto_h = (perfil_h or lead_data or {}).get("apto", "")
-                hab_h = (perfil_h or lead_data or {}).get("habitaciones", "")
-                email_h = (perfil_h or lead_data or {}).get("email", "")
-                intencion_h = (perfil_h or lead_data or {}).get("intencion", "")
-
-                historial_h = await obtener_historial(msg.telefono, limite=30)
-                resumen_h = await generar_resumen_handoff(historial_h, nombre_h, temperatura_h, idioma)
-
-                await activar_handoff(msg.telefono, razon_handoff, nombre_h, resumen_h)
-                await registrar_aviso_handoff(msg.telefono)
-                await _notificar_handoff(
-                    msg.telefono, nombre_h, temperatura_h, razon_handoff,
-                    idioma, apto_h, hab_h, email_h, intencion_h, resumen_h,
-                )
-                logger.info(f"Handoff activado para {msg.telefono} — razón: {razon_handoff}")
-
-            logger.info(f"Respuesta enviada a {msg.telefono}")
+            try:
+                await _procesar_mensaje_canal(msg, proveedor)
+            except Exception as e:
+                logger.error(f"Error procesando mensaje de {msg.telefono}: {e}")
 
         return {"status": "ok"}
 
     except Exception as e:
         logger.error(f"Error en webhook: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/webhook/messenger")
+async def webhook_messenger_verificacion(request: Request):
+    """Verificación GET del webhook de Messenger/Instagram."""
+    if proveedor_messenger is None:
+        return {"status": "messenger no configurado"}
+    resultado = await proveedor_messenger.validar_webhook(request)
+    if resultado is not None:
+        return PlainTextResponse(str(resultado))
+    return {"status": "ok"}
+
+
+@app.post("/webhook/messenger")
+async def webhook_messenger_handler(request: Request):
+    """Recibe mensajes de Facebook Messenger e Instagram DMs."""
+    if proveedor_messenger is None:
+        return {"status": "ok"}
+    try:
+        mensajes = await proveedor_messenger.parsear_webhook(request)
+        for msg in mensajes:
+            if msg.es_propio or not msg.texto:
+                continue
+            if await mensaje_ya_procesado(msg.mensaje_id):
+                logger.info(f"Mensaje Messenger duplicado ignorado: {msg.mensaje_id}")
+                continue
+            await marcar_mensaje_procesado(msg.mensaje_id)
+            try:
+                await _procesar_mensaje_canal(msg, proveedor_messenger)
+            except Exception as e:
+                logger.error(f"Error procesando mensaje Messenger de {msg.telefono}: {e}")
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"Error en webhook/messenger: {e}")
+        return {"status": "ok"}
