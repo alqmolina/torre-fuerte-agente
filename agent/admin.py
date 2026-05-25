@@ -1786,6 +1786,51 @@ async def visita_completar(visita_id: int, request: Request):
     return RedirectResponse(referer, status_code=303)
 
 
+@router.get("/calendar/test", response_class=HTMLResponse)
+async def calendar_test(request: Request):
+    """Diagnóstico de conexión con Google Calendar."""
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
+    import os, json as _json
+    lines = []
+    sa_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
+    lines.append(f"GOOGLE_SERVICE_ACCOUNT_JSON presente: {'Sí' if sa_json else 'NO — variable vacía'}")
+    lines.append(f"GOOGLE_CALENDAR_ID: {os.getenv('GOOGLE_CALENDAR_ID', '(no configurado)')}")
+    if sa_json:
+        lines.append(f"Longitud del valor: {len(sa_json)} caracteres")
+        lines.append(f"Primeros 50 chars: {sa_json[:50]}")
+        try:
+            info = _json.loads(sa_json)
+            lines.append(f"JSON válido: Sí")
+            lines.append(f"client_email: {info.get('client_email', 'no encontrado')}")
+            lines.append(f"project_id: {info.get('project_id', 'no encontrado')}")
+        except Exception as e:
+            lines.append(f"ERROR parseando JSON: {e}")
+            lines.append("Solución: el JSON debe ser una sola línea sin saltos de línea extra")
+        try:
+            from google.oauth2 import service_account
+            from googleapiclient.discovery import build
+            info = _json.loads(sa_json)
+            creds = service_account.Credentials.from_service_account_info(
+                info, scopes=["https://www.googleapis.com/auth/calendar"]
+            )
+            service = build("calendar", "v3", credentials=creds)
+            cal_id = os.getenv("GOOGLE_CALENDAR_ID", "primary")
+            result = service.calendars().get(calendarId=cal_id).execute()
+            lines.append(f"Conexión exitosa: Sí")
+            lines.append(f"Calendario: {result.get('summary', cal_id)}")
+        except Exception as e:
+            lines.append(f"ERROR conectando: {type(e).__name__}: {e}")
+    html_lines = "".join(f"<p style='margin:6px 0;font-family:monospace;font-size:13px'>{_esc(l)}</p>" for l in lines)
+    return f"""<!DOCTYPE html><html><body style='padding:24px;background:#f0f4f8;font-family:sans-serif'>
+    <h2 style='color:#1a3c5e;margin-bottom:16px'>🔧 Diagnóstico Google Calendar</h2>
+    <div style='background:white;padding:20px;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,0.1)'>
+    {html_lines}
+    </div>
+    <p style='margin-top:16px'><a href='/admin/visitas'>← Volver</a></p>
+    </body></html>"""
+
+
 @router.get("/lead/{telefono}/historial", response_class=HTMLResponse)
 async def lead_historial(telefono: str, request: Request):
     if not _autenticado(request):
