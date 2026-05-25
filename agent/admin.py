@@ -508,11 +508,13 @@ async def admin_chat(telefono: str, request: Request):
       </button>
     </form>
   </div>
-  {f'''<div style="background:#fff8e1;border-bottom:1px solid #f0d96a;padding:10px 16px;flex-shrink:0">
-    <div style="font-size:11px;font-weight:700;color:#b7860b;margin-bottom:4px;letter-spacing:0.5px">📋 RESUMEN DE LA CONVERSACIÓN</div>
-    <div style="font-size:13px;color:#555;line-height:1.5">{resumen_html}</div>
-  </div>''' if resumen_html else ''}
-  <details style="background:#e8f8f0;border-bottom:1px solid #a9dfbf;flex-shrink:0" open>
+  {f'''<details style="background:#fff8e1;border-bottom:1px solid #f0d96a;flex-shrink:0">
+    <summary style="padding:10px 16px;cursor:pointer;font-size:11px;font-weight:700;color:#b7860b;letter-spacing:0.5px;user-select:none;list-style:none;display:flex;align-items:center;gap:6px">
+      📋 RESUMEN DE LA CONVERSACIÓN
+    </summary>
+    <div style="padding:0 16px 12px;font-size:13px;color:#555;line-height:1.5">{resumen_html}</div>
+  </details>''' if resumen_html else ''}
+  <details style="background:#e8f8f0;border-bottom:1px solid #a9dfbf;flex-shrink:0">
     <summary style="padding:10px 16px;cursor:pointer;font-size:11px;font-weight:700;color:#1e8449;letter-spacing:0.5px;user-select:none;list-style:none;display:flex;align-items:center;gap:6px">
       📅 VISITAS AGENDADAS <span style="background:#1e8449;color:white;border-radius:10px;padding:1px 7px;font-size:10px">{len(visitas)}</span>
     </summary>
@@ -525,7 +527,7 @@ async def admin_chat(telefono: str, request: Request):
       </a>
     </div>
   </details>
-  <details style="background:#f5f0ff;border-bottom:1px solid #ddd0f8;flex-shrink:0" {'open' if notas else ''}>
+  <details style="background:#f5f0ff;border-bottom:1px solid #ddd0f8;flex-shrink:0">
     <summary style="padding:10px 16px;cursor:pointer;font-size:11px;font-weight:700;color:#7c4dbd;letter-spacing:0.5px;user-select:none;list-style:none;display:flex;align-items:center;gap:6px">
       📝 NOTAS INTERNAS <span style="background:#7c4dbd;color:white;border-radius:10px;padding:1px 7px;font-size:10px">{len(notas)}</span>
     </summary>
