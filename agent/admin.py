@@ -1553,6 +1553,16 @@ async def admin_visitas(request: Request):
 
     limpiar_link = '<a href="/admin/visitas" style="font-size:12px;color:#e74c3c;text-decoration:none">✕ Limpiar</a>' if hay_filtros else ""
 
+    # Flash message tras crear visita manual
+    flash_msg = ""
+    msg_param = params.get("msg", "")
+    if msg_param == "cal_ok":
+        flash_msg = '<div style="background:#d4edda;color:#155724;border-radius:8px;padding:12px 16px;margin-bottom:14px;font-size:13px;font-weight:600">✅ Visita creada y sincronizada con Google Calendar</div>'
+    elif msg_param == "cal_error":
+        flash_msg = '<div style="background:#fde8e8;color:#c0392b;border-radius:8px;padding:12px 16px;margin-bottom:14px;font-size:13px;font-weight:600">⚠️ Visita creada, pero hubo un error al sincronizar con Google Calendar (revisa los logs)</div>'
+    elif msg_param == "cal_skip":
+        flash_msg = '<div style="background:#f0f4f8;color:#1a3c5e;border-radius:8px;padding:12px 16px;margin-bottom:14px;font-size:13px">✅ Visita creada (sin sincronización de Calendar)</div>'
+
     return f"""<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -1602,6 +1612,7 @@ async def admin_visitas(request: Request):
         </div>
       </form>
     </div>
+    {flash_msg}
     {resumen}
     {filas}
   </div>
@@ -1719,14 +1730,22 @@ async def visita_nueva_save(
     visita_id = await guardar_visita(tel, nombre.strip(), fecha, hora, notas_completas)
 
     # Google Calendar
+    cal_msg = "cal_skip"
     if sync_cal == "1":
+        logger.info(f"Visita manual {visita_id}: intentando sincronizar con Google Calendar")
         try:
             event_id = crear_evento_visita(visita_id, nombre.strip(), tel, fecha, hora, notas_completas)
+            logger.info(f"Visita manual {visita_id}: crear_evento_visita retornó event_id={event_id!r}")
             if event_id:
                 await guardar_evento_id(visita_id, event_id)
                 logger.info(f"Visita manual {visita_id} sincronizada con Google Calendar: {event_id}")
+                cal_msg = "cal_ok"
+            else:
+                logger.warning(f"Visita manual {visita_id}: crear_evento_visita retornó None (revisar credenciales o GOOGLE_CALENDAR_ID)")
+                cal_msg = "cal_error"
         except Exception as e:
             logger.error(f"Visita manual {visita_id}: error Google Calendar: {e}")
+            cal_msg = "cal_error"
 
     # WhatsApp al lead
     if enviar_wp == "1" and proveedor:
@@ -1757,7 +1776,7 @@ async def visita_nueva_save(
         except Exception as e:
             logger.error(f"Error enviando confirmacion visita manual a {tel}: {e}")
 
-    return RedirectResponse("/admin/visitas", status_code=303)
+    return RedirectResponse(f"/admin/visitas?msg={cal_msg}", status_code=303)
 
 
 @router.get("/visitas/export")
