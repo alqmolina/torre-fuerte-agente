@@ -1456,6 +1456,7 @@ async def admin_visitas(request: Request):
       <div style="font-size:18px;font-weight:600">Torre Fuerte · Visitas</div>
       <div style="font-size:12px;opacity:0.7">Próximas visitas al proyecto</div>
     </div>
+    <a href="/admin/visitas/nueva" style="color:white;background:#27ae60;border-radius:6px;padding:6px 12px;font-size:12px;text-decoration:none;font-weight:600;margin-right:8px;white-space:nowrap">➕ Nueva</a>
     <a href="/admin/visitas/export" style="color:white;background:rgba(255,255,255,0.15);border-radius:6px;padding:6px 12px;font-size:12px;text-decoration:none;font-weight:600;margin-right:10px;white-space:nowrap">📥 Reporte</a>
     <a href="/admin/logout" style="color:rgba(255,255,255,0.6);font-size:12px;text-decoration:none">Salir</a>
   </div>
@@ -1484,6 +1485,157 @@ async def admin_visitas(request: Request):
   </div>
 </body>
 </html>"""
+
+
+@router.get("/visitas/nueva", response_class=HTMLResponse)
+async def visita_nueva_form(request: Request):
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
+
+    from datetime import date as _date
+    hoy = _date.today().isoformat()
+    horas = ["09:00","09:30","10:00","10:30","11:00","11:30",
+             "14:00","14:30","15:00","15:30","16:00","16:30","17:00"]
+    opciones_hora = "".join(f'<option value="{h}">{h}</option>' for h in horas)
+
+    return f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nueva visita — Torre Fuerte</title>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; }}
+    .header {{ background: #1a3c5e; color: white; padding: 16px 20px; display: flex; align-items: center; gap: 12px; }}
+    .container {{ max-width: 500px; margin: 0 auto; padding: 24px 16px; }}
+    .card {{ background: white; border-radius: 12px; padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }}
+    .row-2 {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }}
+    label {{ display:block; font-size:13px; font-weight:600; color:#444; margin-bottom:6px; }}
+    input, select, textarea {{ width:100%; padding:10px 12px; border:1px solid #d0dce8; border-radius:8px; font-size:14px; margin-bottom:16px; font-family:inherit; }}
+    textarea {{ min-height:70px; resize:vertical; }}
+    .btn {{ width:100%; background:#27ae60; color:white; border:none; border-radius:8px; padding:13px; font-size:15px; font-weight:600; cursor:pointer; }}
+    .btn:hover {{ background:#219a52; }}
+    .btn-sec {{ display:block; text-align:center; color:#888; font-size:13px; margin-top:12px; text-decoration:none; }}
+    .section {{ font-size:11px; font-weight:700; color:#999; text-transform:uppercase; letter-spacing:1px; margin-bottom:12px; margin-top:4px; }}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/admin/visitas" style="color:white;text-decoration:none;font-size:20px">←</a>
+    <div style="flex:1">
+      <div style="font-size:18px;font-weight:600">Nueva visita / llamada</div>
+      <div style="font-size:12px;opacity:0.7">Agendamiento manual</div>
+    </div>
+  </div>
+  <div class="container">
+    <div class="card">
+      <form method="post" action="/admin/visitas/nueva">
+        <p class="section">Datos del contacto</p>
+        <label>Nombre completo</label>
+        <input type="text" name="nombre" placeholder="Ej: Carlos Pérez" required>
+        <label>Teléfono (con código de país)</label>
+        <input type="tel" name="telefono" placeholder="Ej: 573001234567" required>
+        <label>Apartamento de interés</label>
+        <input type="text" name="apto" placeholder="Ej: 401, PH-01, Torre B piso 5">
+
+        <p class="section" style="margin-top:4px">Fecha y hora</p>
+        <div class="row-2">
+          <div>
+            <label>Fecha</label>
+            <input type="date" name="fecha" value="{hoy}" required>
+          </div>
+          <div>
+            <label>Hora</label>
+            <select name="hora">{opciones_hora}</select>
+          </div>
+        </div>
+
+        <label>Notas adicionales</label>
+        <textarea name="notas" placeholder="Ej: Cliente interesado en financiación, viene con pareja..."></textarea>
+
+        <label style="display:flex;align-items:center;gap:8px;font-weight:normal;margin-bottom:16px">
+          <input type="checkbox" name="enviar_wp" value="1" checked style="width:auto;margin-bottom:0;accent-color:#27ae60">
+          Enviar confirmación por WhatsApp al lead
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;font-weight:normal;margin-bottom:20px">
+          <input type="checkbox" name="sync_cal" value="1" checked style="width:auto;margin-bottom:0;accent-color:#1a3c5e">
+          Sincronizar con Google Calendar
+        </label>
+        <button type="submit" class="btn">📅 Guardar visita</button>
+      </form>
+      <a href="/admin/visitas" class="btn-sec">Cancelar</a>
+    </div>
+  </div>
+</body>
+</html>"""
+
+
+@router.post("/visitas/nueva")
+async def visita_nueva_save(
+    request: Request,
+    nombre: str = Form(...),
+    telefono: str = Form(...),
+    fecha: str = Form(...),
+    hora: str = Form(...),
+    apto: str = Form(default=""),
+    notas: str = Form(default=""),
+    enviar_wp: str = Form(default=""),
+    sync_cal: str = Form(default=""),
+):
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
+
+    # Normalizar teléfono: quitar + y espacios
+    tel = telefono.strip().lstrip("+").replace(" ", "")
+
+    # Combinar apto y notas en el campo notas
+    notas_completas = notas.strip()
+    if apto.strip():
+        notas_completas = f"Apto interés: {apto.strip()}" + (f" | {notas_completas}" if notas_completas else "")
+
+    visita_id = await guardar_visita(tel, nombre.strip(), fecha, hora, notas_completas)
+
+    # Google Calendar
+    if sync_cal == "1":
+        try:
+            event_id = crear_evento_visita(visita_id, nombre.strip(), tel, fecha, hora, notas_completas)
+            if event_id:
+                await guardar_evento_id(visita_id, event_id)
+                logger.info(f"Visita manual {visita_id} sincronizada con Google Calendar: {event_id}")
+        except Exception as e:
+            logger.error(f"Visita manual {visita_id}: error Google Calendar: {e}")
+
+    # WhatsApp al lead
+    if enviar_wp == "1" and proveedor:
+        try:
+            idioma = await obtener_idioma(tel) or "es"
+            fecha_fmt = _fmt_fecha(fecha, idioma)
+            notas_line = f"\n📝 {notas.strip()}" if notas.strip() else ""
+            apto_line = f"\n🏢 Apto de interés: {apto.strip()}" if apto.strip() else ""
+            if idioma == "en":
+                msg = (
+                    f"Torre Fuerte — Visit Confirmed\n\n"
+                    f"Hello {nombre.strip()}, your visit to Torre Fuerte is confirmed:\n\n"
+                    f"Date: {fecha_fmt}\n"
+                    f"Time: {hora}"
+                    f"{apto_line}{notas_line}\n\n"
+                    f"We look forward to seeing you!"
+                )
+            else:
+                msg = (
+                    f"Torre Fuerte — Visita confirmada\n\n"
+                    f"Hola {nombre.strip()}, confirmamos tu visita al proyecto:\n\n"
+                    f"Fecha: {fecha_fmt}\n"
+                    f"Hora: {hora}"
+                    f"{apto_line}{notas_line}\n\n"
+                    f"Te esperamos! Si necesitas cambiar la fecha, escribenos aqui."
+                )
+            await proveedor.enviar_mensaje(tel, msg)
+        except Exception as e:
+            logger.error(f"Error enviando confirmacion visita manual a {tel}: {e}")
+
+    return RedirectResponse("/admin/visitas", status_code=303)
 
 
 @router.get("/visitas/export")
