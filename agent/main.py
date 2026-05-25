@@ -262,18 +262,26 @@ async def _notificar_visita_asesor(telefono: str, nombre: str, fecha: str, hora:
 
 
 async def _tarea_recordatorios_visitas() -> None:
-    """Tarea background: envía recordatorios de visita 24h y 1h antes."""
+    """Tarea background: envía recordatorios de visita 24h y 1h antes (bot y manuales)."""
     await asyncio.sleep(120)  # esperar arranque completo
     while True:
         try:
             pendientes = await obtener_visitas_para_recordatorio()
+            if pendientes:
+                logger.info(f"Recordatorios pendientes: {len(pendientes)}")
             for item in pendientes:
                 telefono = item["telefono"]
                 nombre   = item["nombre"]
                 hora     = item["hora"]
                 tipo     = item["tipo"]
-                idioma   = await obtener_idioma(telefono) or "es"
-                tel_envio = telefono.lstrip("+")
+
+                # Normalizar teléfono: quitar + y espacios
+                tel_envio = telefono.strip().lstrip("+").replace(" ", "")
+
+                try:
+                    idioma = await obtener_idioma(tel_envio) or "es"
+                except Exception:
+                    idioma = "es"
 
                 try:
                     from datetime import datetime as _dt
@@ -314,10 +322,13 @@ async def _tarea_recordatorios_visitas() -> None:
                     ok = await proveedor.enviar_mensaje(tel_envio, msg)
                     if ok:
                         await marcar_recordatorio(item["id"], tipo)
-                        await guardar_mensaje(telefono, "assistant", msg)
-                        logger.info(f"Recordatorio {tipo} enviado a {nombre} ({telefono})")
+                        try:
+                            await guardar_mensaje(tel_envio, "assistant", msg)
+                        except Exception as e:
+                            logger.warning(f"No se pudo guardar mensaje de recordatorio en historial: {e}")
+                        logger.info(f"Recordatorio {tipo} enviado a {nombre} ({tel_envio})")
                     else:
-                        logger.error(f"Fallo envío recordatorio {tipo} a {telefono}")
+                        logger.error(f"Fallo envío recordatorio {tipo} a {tel_envio}")
 
         except Exception as e:
             logger.error(f"Error en tarea recordatorios: {e}")
