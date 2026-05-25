@@ -224,24 +224,37 @@ def _fmt_fecha_notif(fecha: str, idioma: str) -> str:
         return fecha
 
 
-async def _notificar_visita_asesor(telefono: str, nombre: str, fecha: str, hora: str, notas: str, tipo: str = "nueva") -> None:
-    """Envía WhatsApp al asesor cuando el bot agenda o reagenda una visita."""
+async def _notificar_visita_asesor(telefono: str, nombre: str, fecha: str, hora: str, notas: str,
+                                    tipo: str = "nueva", visita_id: int | None = None) -> None:
+    """Envía WhatsApp al asesor cuando el bot agenda, reagenda o cancela una visita."""
     if not ASESOR_WHATSAPP or not proveedor:
         return
-    fecha_fmt = _fmt_fecha_notif(fecha, "es")
     if tipo == "reagenda":
         titulo = "🔄 VISITA REAGENDADA (via WhatsApp)"
+    elif tipo == "cancela":
+        titulo = "❌ VISITA CANCELADA (via WhatsApp)"
     else:
         titulo = "📅 NUEVA VISITA AGENDADA (via WhatsApp)"
-    msg = (
-        f"{titulo}\n\n"
-        f"👤 Lead: {nombre or 'Sin nombre'}\n"
-        f"📱 Tel: {telefono}\n"
-        f"📅 Fecha: {fecha_fmt}\n"
-        f"⏰ Hora: {hora}"
-        + (f"\n📝 Notas: {notas}" if notas else "")
-        + f"\n\nVer chat: {BASE_URL}/admin/chat/{telefono}"
-    )
+
+    if tipo == "cancela":
+        msg = (
+            f"{titulo}\n\n"
+            f"👤 Lead: {nombre or 'Sin nombre'}\n"
+            f"📱 Tel: {telefono}"
+            + (f"\n🔢 Visita ID: {visita_id}" if visita_id else "")
+            + f"\n\nVer chat: {BASE_URL}/admin/chat/{telefono}"
+        )
+    else:
+        fecha_fmt = _fmt_fecha_notif(fecha, "es")
+        msg = (
+            f"{titulo}\n\n"
+            f"👤 Lead: {nombre or 'Sin nombre'}\n"
+            f"📱 Tel: {telefono}\n"
+            f"📅 Fecha: {fecha_fmt}\n"
+            f"⏰ Hora: {hora}"
+            + (f"\n📝 Notas: {notas}" if notas else "")
+            + f"\n\nVer chat: {BASE_URL}/admin/chat/{telefono}"
+        )
     try:
         await proveedor.enviar_mensaje(ASESOR_WHATSAPP.lstrip("+"), msg)
     except Exception as e:
@@ -572,6 +585,13 @@ async def webhook_handler(request: Request):
             if cancelar_visita_id:
                 await cancelar_visita(cancelar_visita_id)
                 logger.info(f"Visita {cancelar_visita_id} cancelada via WhatsApp ({msg.telefono})")
+                await _notificar_visita_asesor(
+                    msg.telefono,
+                    (perfil or {}).get("nombre", "") or "Lead",
+                    "", "", "",
+                    tipo="cancela",
+                    visita_id=cancelar_visita_id,
+                )
                 try:
                     event_id = await obtener_evento_id(cancelar_visita_id)
                     if event_id:
