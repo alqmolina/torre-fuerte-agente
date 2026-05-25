@@ -191,7 +191,7 @@ async def obtener_historial(telefono: str, limite: int = 50) -> list[dict]:
         result = await session.execute(query)
         mensajes = result.scalars().all()
         mensajes.reverse()
-        return [{"role": m.role, "content": m.content} for m in mensajes]
+        return [{"role": m.role, "content": m.content, "timestamp": _col(m.timestamp)} for m in mensajes]
 
 
 async def limpiar_historial(telefono: str):

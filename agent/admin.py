@@ -407,6 +407,7 @@ async def admin_chat(telefono: str, request: Request):
     subtitulo_extra = " &nbsp;·&nbsp; ".join(partes_info) + (" &nbsp;·&nbsp; " if partes_info else "")
 
     mensajes_html = ""
+    prev_date = ""
     for msg in historial:
         contenido = msg["content"]
         if contenido.startswith("[Sistema:"):
@@ -417,6 +418,26 @@ async def admin_chat(telefono: str, request: Request):
         color = "#ffffff" if es_bot else "#222222"
         label = "Bot / Asesor" if es_bot else "Lead"
         contenido_esc = _esc(contenido).replace("\n", "<br>")
+        ts = msg.get("timestamp", "")
+        ts_date = ts[:10] if ts else ""
+        ts_hora = ts[11:16] if len(ts) >= 16 else ""
+
+        # Separador de fecha cuando cambia el día
+        if ts_date and ts_date != prev_date:
+            prev_date = ts_date
+            try:
+                from datetime import datetime as _dt
+                d = _dt.strptime(ts_date, "%Y-%m-%d")
+                fecha_label = d.strftime("%-d de %B").replace(
+                    "January","enero").replace("February","febrero").replace("March","marzo").replace(
+                    "April","abril").replace("May","mayo").replace("June","junio").replace(
+                    "July","julio").replace("August","agosto").replace("September","septiembre").replace(
+                    "October","octubre").replace("November","noviembre").replace("December","diciembre")
+            except Exception:
+                fecha_label = ts_date
+            mensajes_html += f'<div style="text-align:center;margin:14px 0 8px"><span style="background:#d0dce8;color:#555;font-size:11px;border-radius:10px;padding:3px 12px">{fecha_label}</span></div>'
+
+        ts_color = "rgba(255,255,255,0.5)" if es_bot else "#aaa"
         mensajes_html += f"""
         <div style="display:flex;justify-content:{align};margin-bottom:10px;padding:0 4px">
           <div style="max-width:78%;background:{bg};color:{color};padding:10px 14px;
@@ -424,6 +445,7 @@ async def admin_chat(telefono: str, request: Request):
                       box-shadow:0 1px 3px rgba(0,0,0,0.1)">
             <div style="font-size:10px;opacity:0.55;margin-bottom:4px;font-weight:600">{label}</div>
             {contenido_esc}
+            <div style="font-size:10px;color:{ts_color};text-align:right;margin-top:5px">{ts_hora}</div>
           </div>
         </div>"""
 
