@@ -936,22 +936,39 @@ async def _ejecutar_broadcast(broadcast_id: int, leads: list[dict], mensaje: str
         texto = mensaje.replace("{{nombre}}", nombre).replace("{{name}}", nombre)
         try:
             if media_id and media_tipo and proveedor:
-                # Enviar imagen/documento con el texto como caption
                 access_token = os.getenv("META_ACCESS_TOKEN")
                 phone_number_id = os.getenv("META_PHONE_NUMBER_ID")
                 url = f"https://graph.facebook.com/v21.0/{phone_number_id}/messages"
                 headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
-                payload = {
-                    "messaging_product": "whatsapp",
-                    "to": lead["telefono"].lstrip("+"),
-                    "type": media_tipo,
-                    media_tipo: {"id": media_id, "caption": texto} if media_tipo in ("image", "video") else {"id": media_id},
-                }
-                async with httpx.AsyncClient() as client:
-                    r = await client.post(url, json=payload, headers=headers, timeout=30)
-                    ok = r.status_code == 200
-                    if not ok:
-                        logger.error(f"Broadcast imagen {lead['telefono']}: {r.status_code} {r.text}")
+                tel = lead["telefono"].lstrip("+")
+                if media_tipo in ("image", "video"):
+                    # Imagen/video: texto como caption en el mismo mensaje
+                    payload = {
+                        "messaging_product": "whatsapp",
+                        "to": tel,
+                        "type": media_tipo,
+                        media_tipo: {"id": media_id, "caption": texto},
+                    }
+                    async with httpx.AsyncClient() as client:
+                        r = await client.post(url, json=payload, headers=headers, timeout=30)
+                        ok = r.status_code == 200
+                        if not ok:
+                            logger.error(f"Broadcast media {tel}: {r.status_code} {r.text}")
+                else:
+                    # Documento/PDF: texto primero, luego el archivo
+                    ok = await proveedor.enviar_mensaje(tel, texto)
+                    await asyncio.sleep(0.2)
+                    doc_payload = {
+                        "messaging_product": "whatsapp",
+                        "to": tel,
+                        "type": "document",
+                        "document": {"id": media_id},
+                    }
+                    async with httpx.AsyncClient() as client:
+                        r = await client.post(url, json=doc_payload, headers=headers, timeout=30)
+                        ok = ok and r.status_code == 200
+                        if r.status_code != 200:
+                            logger.error(f"Broadcast doc {tel}: {r.status_code} {r.text}")
             else:
                 ok = await proveedor.enviar_mensaje(lead["telefono"], texto) if proveedor else False
             await registrar_broadcast_log(broadcast_id, lead["telefono"], nombre, ok)
@@ -1074,8 +1091,8 @@ async def broadcast_form(request: Request):
 
     <div class="card">
       <h3>🖼️ Imagen adjunta (opcional)</h3>
-      <p style="font-size:12px;color:#888;margin-bottom:10px">El texto del mensaje se enviará como caption de la imagen. Formatos: JPG, PNG, WEBP (máx. 5 MB)</p>
-      <input type="file" id="imagen" accept="image/jpeg,image/png,image/webp,image/gif"
+      <p style="font-size:12px;color:#888;margin-bottom:10px">Imágenes: el texto va como caption. PDF/documentos: el texto se envía primero, luego el archivo. Máx. 5 MB.</p>
+      <input type="file" id="imagen" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.pdf"
              style="font-size:13px;" onchange="mostrarPreview(this)">
       <div id="img-preview" style="margin-top:10px;display:none">
         <img id="img-thumb" style="max-height:120px;border-radius:8px;border:1px solid #ddd">
