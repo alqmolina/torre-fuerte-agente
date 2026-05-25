@@ -1817,10 +1817,32 @@ async def calendar_test(request: Request):
             service = build("calendar", "v3", credentials=creds)
             cal_id = os.getenv("GOOGLE_CALENDAR_ID", "primary")
             result = service.calendars().get(calendarId=cal_id).execute()
-            lines.append(f"Conexión exitosa: Sí")
+            lines.append(f"Lectura exitosa: Sí")
             lines.append(f"Calendario: {result.get('summary', cal_id)}")
         except Exception as e:
-            lines.append(f"ERROR conectando: {type(e).__name__}: {e}")
+            lines.append(f"ERROR leyendo calendario: {type(e).__name__}: {e}")
+        try:
+            from google.oauth2 import service_account
+            from googleapiclient.discovery import build
+            info = _json.loads(sa_json)
+            creds = service_account.Credentials.from_service_account_info(
+                info, scopes=["https://www.googleapis.com/auth/calendar"]
+            )
+            service = build("calendar", "v3", credentials=creds)
+            cal_id = os.getenv("GOOGLE_CALENDAR_ID", "primary")
+            test_event = {
+                "summary": "TEST Torre Fuerte — borrar",
+                "start": {"dateTime": "2026-05-30T10:00:00", "timeZone": "America/Bogota"},
+                "end":   {"dateTime": "2026-05-30T11:00:00", "timeZone": "America/Bogota"},
+            }
+            created = service.events().insert(calendarId=cal_id, body=test_event).execute()
+            event_id_test = created.get("id")
+            lines.append(f"Escritura exitosa: Sí — event_id={event_id_test}")
+            # borrar el evento de prueba
+            service.events().delete(calendarId=cal_id, eventId=event_id_test).execute()
+            lines.append(f"Evento de prueba creado y eliminado correctamente")
+        except Exception as e:
+            lines.append(f"ERROR escribiendo evento: {type(e).__name__}: {e}")
     html_lines = "".join(f"<p style='margin:6px 0;font-family:monospace;font-size:13px'>{_esc(l)}</p>" for l in lines)
     return f"""<!DOCTYPE html><html><body style='padding:24px;background:#f0f4f8;font-family:sans-serif'>
     <h2 style='color:#1a3c5e;margin-bottom:16px'>🔧 Diagnóstico Google Calendar</h2>
