@@ -883,6 +883,43 @@ async def borrar_evento_id(visita_id: int) -> None:
             await session.commit()
 
 
+async def eliminar_lead_completo(telefono: str) -> None:
+    """Borra absolutamente todos los datos de un lead de la base de datos."""
+    async with async_session() as session:
+        # Obtener IDs de visitas para limpiar tablas relacionadas
+        res_visitas = await session.execute(select(Visita).where(Visita.telefono == telefono))
+        visita_ids = [v.id for v in res_visitas.scalars().all()]
+
+        # Borrar EventoCalendario y RecordatorioEnviado por visita_id
+        for vid in visita_ids:
+            cal = await session.get(EventoCalendario, vid)
+            if cal:
+                await session.delete(cal)
+            recs = await session.execute(select(RecordatorioEnviado).where(RecordatorioEnviado.visita_id == vid))
+            for r in recs.scalars().all():
+                await session.delete(r)
+
+        # Borrar tablas por telefono
+        for model, col in [
+            (Visita, Visita.telefono),
+            (Mensaje, Mensaje.telefono),
+            (SeguimientoLead, SeguimientoLead.telefono),
+            (BroadcastLog, BroadcastLog.telefono),
+            (NotaLead, NotaLead.telefono),
+        ]:
+            rows = await session.execute(select(model).where(col == telefono))
+            for row in rows.scalars().all():
+                await session.delete(row)
+
+        # Borrar registros con PK telefono
+        for model in [Lead, Preferencia, Handoff]:
+            row = await session.get(model, telefono)
+            if row:
+                await session.delete(row)
+
+        await session.commit()
+
+
 async def obtener_todas_las_visitas() -> list[dict]:
     """Retorna todas las visitas (todos los estados) ordenadas por fecha desc para reporte."""
     async with async_session() as session:

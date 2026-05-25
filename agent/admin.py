@@ -46,6 +46,7 @@ from agent.memory import (
     obtener_evento_id,
     borrar_evento_id,
     guardar_lead,
+    eliminar_lead_completo,
     obtener_idioma,
     buscar_leads,
     obtener_actividad_lead,
@@ -529,6 +530,12 @@ async def admin_chat(telefono: str, request: Request):
       <button type="submit" class="close-btn" style="background:rgba(231,76,60,0.2);border-color:rgba(231,76,60,0.5)"
               onclick="return confirm('¿Eliminar todo el historial de esta conversación? Esta acción no se puede deshacer.')">
         🗑️
+      </button>
+    </form>
+    <form method="post" action="/admin/lead/{tel_esc}/eliminar" style="margin:0">
+      <button type="submit" class="close-btn" style="background:rgba(231,76,60,0.35);border-color:rgba(231,76,60,0.7);color:#c0392b;font-size:11px;padding:0 8px;white-space:nowrap"
+              onclick="return confirm('⚠️ ¿Eliminar COMPLETAMENTE este lead de la base de datos? Se borrarán todos sus datos, visitas, notas e historial. Esta acción NO se puede deshacer.')">
+        Eliminar lead
       </button>
     </form>
   </div>
@@ -2508,3 +2515,15 @@ async def admin_delete(telefono: str, request: Request):
     await limpiar_historial(telefono)
     await desactivar_handoff(telefono)
     return RedirectResponse("/admin", status_code=303)
+
+
+@router.post("/lead/{telefono}/eliminar")
+async def admin_eliminar_lead(telefono: str, request: Request):
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
+    try:
+        await eliminar_lead_completo(telefono)
+        logger.info(f"Lead {telefono} eliminado completamente de la base de datos")
+    except Exception as e:
+        logger.error(f"Error eliminando lead {telefono}: {e}")
+    return RedirectResponse("/admin/buscar", status_code=303)
