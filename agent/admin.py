@@ -926,7 +926,8 @@ async def admin_dashboard(request: Request):
 
 # ── Broadcast ─────────────────────────────────────────────────────────────────
 
-async def _ejecutar_broadcast(broadcast_id: int, leads: list[dict], mensaje: str):
+async def _ejecutar_broadcast(broadcast_id: int, leads: list[dict], mensaje: str,
+                               media_id: str = "", media_tipo: str = ""):
     """Worker en background: envía el mensaje a cada lead con pausa entre envíos."""
     enviados = 0
     fallidos = 0
@@ -934,7 +935,25 @@ async def _ejecutar_broadcast(broadcast_id: int, leads: list[dict], mensaje: str
         nombre = lead["nombre"] or ""
         texto = mensaje.replace("{{nombre}}", nombre).replace("{{name}}", nombre)
         try:
-            ok = await proveedor.enviar_mensaje(lead["telefono"], texto) if proveedor else False
+            if media_id and media_tipo and proveedor:
+                # Enviar imagen/documento con el texto como caption
+                access_token = os.getenv("META_ACCESS_TOKEN")
+                phone_number_id = os.getenv("META_PHONE_NUMBER_ID")
+                url = f"https://graph.facebook.com/v21.0/{phone_number_id}/messages"
+                headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+                payload = {
+                    "messaging_product": "whatsapp",
+                    "to": lead["telefono"].lstrip("+"),
+                    "type": media_tipo,
+                    media_tipo: {"id": media_id, "caption": texto} if media_tipo in ("image", "video") else {"id": media_id},
+                }
+                async with httpx.AsyncClient() as client:
+                    r = await client.post(url, json=payload, headers=headers, timeout=30)
+                    ok = r.status_code == 200
+                    if not ok:
+                        logger.error(f"Broadcast imagen {lead['telefono']}: {r.status_code} {r.text}")
+            else:
+                ok = await proveedor.enviar_mensaje(lead["telefono"], texto) if proveedor else False
             await registrar_broadcast_log(broadcast_id, lead["telefono"], nombre, ok)
             if ok:
                 enviados += 1
@@ -1036,8 +1055,32 @@ async def broadcast_form(request: Request):
       <p style="font-size:12px;color:#888;margin-bottom:10px">
         Usa <code style="background:#f4f6f7;padding:1px 5px;border-radius:4px">{{nombre}}</code> para personalizar con el nombre del lead.
       </p>
+      <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+        <button type="button" onclick="fmt('*')" title="Negrita" style="background:#f4f6f7;border:1px solid #ddd;border-radius:6px;padding:5px 10px;font-size:13px;cursor:pointer;font-weight:700">B</button>
+        <button type="button" onclick="fmt('_')" title="Cursiva" style="background:#f4f6f7;border:1px solid #ddd;border-radius:6px;padding:5px 10px;font-size:13px;cursor:pointer;font-style:italic">I</button>
+        <button type="button" onclick="fmt('~')" title="Tachado" style="background:#f4f6f7;border:1px solid #ddd;border-radius:6px;padding:5px 10px;font-size:13px;cursor:pointer;text-decoration:line-through">S</button>
+        <button type="button" onclick="fmt('```')" title="Monoespaciado" style="background:#f4f6f7;border:1px solid #ddd;border-radius:6px;padding:5px 10px;font-size:13px;cursor:pointer;font-family:monospace">mono</button>
+        <span style="color:#ddd;margin:0 2px">|</span>
+        <button type="button" onclick="ins('🔥')" style="background:#f4f6f7;border:1px solid #ddd;border-radius:6px;padding:5px 8px;font-size:14px;cursor:pointer">🔥</button>
+        <button type="button" onclick="ins('🏠')" style="background:#f4f6f7;border:1px solid #ddd;border-radius:6px;padding:5px 8px;font-size:14px;cursor:pointer">🏠</button>
+        <button type="button" onclick="ins('💎')" style="background:#f4f6f7;border:1px solid #ddd;border-radius:6px;padding:5px 8px;font-size:14px;cursor:pointer">💎</button>
+        <button type="button" onclick="ins('📞')" style="background:#f4f6f7;border:1px solid #ddd;border-radius:6px;padding:5px 8px;font-size:14px;cursor:pointer">📞</button>
+        <button type="button" onclick="ins('✅')" style="background:#f4f6f7;border:1px solid #ddd;border-radius:6px;padding:5px 8px;font-size:14px;cursor:pointer">✅</button>
+        <button type="button" onclick="ins('👇')" style="background:#f4f6f7;border:1px solid #ddd;border-radius:6px;padding:5px 8px;font-size:14px;cursor:pointer">👇</button>
+      </div>
       <textarea id="mensaje" rows="6" placeholder="Hola {{nombre}}, te escribimos desde Torre Fuerte con una novedad especial..."></textarea>
       <div style="text-align:right;font-size:12px;color:#aaa;margin-top:4px" id="chars">0 caracteres</div>
+    </div>
+
+    <div class="card">
+      <h3>🖼️ Imagen adjunta (opcional)</h3>
+      <p style="font-size:12px;color:#888;margin-bottom:10px">El texto del mensaje se enviará como caption de la imagen. Formatos: JPG, PNG, WEBP (máx. 5 MB)</p>
+      <input type="file" id="imagen" accept="image/jpeg,image/png,image/webp,image/gif"
+             style="font-size:13px;" onchange="mostrarPreview(this)">
+      <div id="img-preview" style="margin-top:10px;display:none">
+        <img id="img-thumb" style="max-height:120px;border-radius:8px;border:1px solid #ddd">
+        <button type="button" onclick="quitarImagen()" style="display:block;margin-top:6px;background:none;border:none;color:#e74c3c;font-size:12px;cursor:pointer">✕ Quitar imagen</button>
+      </div>
     </div>
 
     <button class="btn-primary" id="send-btn" onclick="enviarBroadcast()">📤 Enviar broadcast</button>
@@ -1047,9 +1090,44 @@ async def broadcast_form(request: Request):
   </div>
 
   <script>
-    document.getElementById('mensaje').addEventListener('input', function() {
+    const ta = document.getElementById('mensaje');
+
+    ta.addEventListener('input', function() {
       document.getElementById('chars').textContent = this.value.length + ' caracteres';
     });
+
+    function fmt(marca) {
+      const start = ta.selectionStart, end = ta.selectionEnd;
+      const sel = ta.value.substring(start, end) || 'texto';
+      const nuevo = ta.value.substring(0, start) + marca + sel + marca + ta.value.substring(end);
+      ta.value = nuevo;
+      ta.focus();
+      ta.setSelectionRange(start + marca.length, start + marca.length + sel.length);
+      ta.dispatchEvent(new Event('input'));
+    }
+
+    function ins(emoji) {
+      const pos = ta.selectionStart;
+      ta.value = ta.value.substring(0, pos) + emoji + ta.value.substring(pos);
+      ta.focus();
+      ta.setSelectionRange(pos + emoji.length, pos + emoji.length);
+      ta.dispatchEvent(new Event('input'));
+    }
+
+    function mostrarPreview(input) {
+      if (!input.files || !input.files[0]) return;
+      const reader = new FileReader();
+      reader.onload = e => {
+        document.getElementById('img-thumb').src = e.target.result;
+        document.getElementById('img-preview').style.display = 'block';
+      };
+      reader.readAsDataURL(input.files[0]);
+    }
+
+    function quitarImagen() {
+      document.getElementById('imagen').value = '';
+      document.getElementById('img-preview').style.display = 'none';
+    }
 
     function _filtros() {
       const temps = Array.from(document.querySelectorAll('input[name="temp"]:checked')).map(c => c.value);
@@ -1074,7 +1152,7 @@ async def broadcast_form(request: Request):
 
     async function enviarBroadcast() {
       const f = _filtros();
-      const mensaje = document.getElementById('mensaje').value.trim();
+      const mensaje = ta.value.trim();
       if (!mensaje) { alert('Escribe un mensaje antes de enviar'); return; }
       if (!f.temperaturas.length) { alert('Selecciona al menos una temperatura'); return; }
       if (!confirm('¿Confirmar envío del broadcast? Esta acción enviará mensajes de WhatsApp reales.')) return;
@@ -1083,8 +1161,13 @@ async def broadcast_form(request: Request):
       btn.disabled = true;
       btn.textContent = '⏳ Iniciando envío...';
 
-      const body = new URLSearchParams({ idioma: f.idioma, intencion: f.intencion, mensaje });
+      const body = new FormData();
+      body.append('idioma', f.idioma);
+      body.append('intencion', f.intencion);
+      body.append('mensaje', mensaje);
       f.temperaturas.forEach(t => body.append('temperaturas', t));
+      const imgFile = document.getElementById('imagen').files[0];
+      if (imgFile) body.append('imagen', imgFile);
 
       const r = await fetch('/admin/broadcast', { method: 'POST', body });
       const data = await r.json();
@@ -1121,6 +1204,7 @@ async def broadcast_enviar(
     idioma: str = Form(default=""),
     intencion: str = Form(default=""),
     mensaje: str = Form(...),
+    imagen: UploadFile = File(default=None),
 ):
     if not _autenticado(request):
         return JSONResponse({"error": "No autorizado"}, status_code=401)
@@ -1133,9 +1217,20 @@ async def broadcast_enviar(
     if not leads:
         return JSONResponse({"error": "No hay leads que coincidan con los filtros seleccionados"})
 
+    # Subir imagen una sola vez si se adjuntó
+    media_id = ""
+    media_tipo = ""
+    if imagen and imagen.filename:
+        file_bytes = await imagen.read()
+        mime_type = imagen.content_type or "image/jpeg"
+        media_tipo = _tipo_media(mime_type)
+        media_id = await _subir_media_meta(file_bytes, mime_type, imagen.filename) or ""
+        if not media_id:
+            return JSONResponse({"error": "No se pudo subir la imagen a WhatsApp. Verifica que sea JPG, PNG o similar."})
+
     filtros_str = json.dumps({"temperaturas": temperaturas, "idioma": idioma, "intencion": intencion}, ensure_ascii=False)
     broadcast_id = await crear_broadcast(mensaje.strip(), filtros_str, len(leads))
-    asyncio.create_task(_ejecutar_broadcast(broadcast_id, leads, mensaje.strip()))
+    asyncio.create_task(_ejecutar_broadcast(broadcast_id, leads, mensaje.strip(), media_id, media_tipo))
 
     return JSONResponse({"ok": True, "id": broadcast_id, "total": len(leads)})
 
