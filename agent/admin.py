@@ -1234,16 +1234,24 @@ async def broadcast_enviar(
     if not leads:
         return JSONResponse({"error": "No hay leads que coincidan con los filtros seleccionados"})
 
-    # Subir imagen una sola vez si se adjuntó
+    # Subir archivo una sola vez si se adjuntó
     media_id = ""
     media_tipo = ""
     if imagen and imagen.filename:
         file_bytes = await imagen.read()
-        mime_type = imagen.content_type or "image/jpeg"
+        # Detectar MIME type por extensión si el navegador envía genérico
+        mime_type = imagen.content_type or ""
+        fname_lower = imagen.filename.lower()
+        if fname_lower.endswith(".pdf") or mime_type in ("application/octet-stream", ""):
+            mime_type = "application/pdf"
+        elif not mime_type:
+            mime_type = "image/jpeg"
         media_tipo = _tipo_media(mime_type)
+        logger.info(f"Broadcast upload: filename={imagen.filename} mime={mime_type} tipo={media_tipo}")
         media_id = await _subir_media_meta(file_bytes, mime_type, imagen.filename) or ""
+        logger.info(f"Broadcast upload resultado: media_id={media_id!r}")
         if not media_id:
-            return JSONResponse({"error": "No se pudo subir la imagen a WhatsApp. Verifica que sea JPG, PNG o similar."})
+            return JSONResponse({"error": f"No se pudo subir el archivo a WhatsApp (tipo: {mime_type}). Verifica que sea JPG, PNG o PDF."})
 
     filtros_str = json.dumps({"temperaturas": temperaturas, "idioma": idioma, "intencion": intencion}, ensure_ascii=False)
     broadcast_id = await crear_broadcast(mensaje.strip(), filtros_str, len(leads))
