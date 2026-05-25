@@ -899,8 +899,9 @@ async def eliminar_lead_completo(telefono: str) -> None:
             for r in recs.scalars().all():
                 await session.delete(r)
 
-        # Borrar tablas por telefono
+        # Borrar tablas por telefono (incluyendo Lead cuya PK es id, no telefono)
         for model, col in [
+            (Lead, Lead.telefono),
             (Visita, Visita.telefono),
             (Mensaje, Mensaje.telefono),
             (SeguimientoLead, SeguimientoLead.telefono),
@@ -911,8 +912,8 @@ async def eliminar_lead_completo(telefono: str) -> None:
             for row in rows.scalars().all():
                 await session.delete(row)
 
-        # Borrar registros con PK telefono
-        for model in [Lead, Preferencia, Handoff]:
+        # Borrar registros con PK = telefono
+        for model in [Preferencia, Handoff]:
             row = await session.get(model, telefono)
             if row:
                 await session.delete(row)
