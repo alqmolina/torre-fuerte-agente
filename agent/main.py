@@ -560,21 +560,25 @@ async def webhook_handler(request: Request):
                     msg.telefono, nombre_v,
                     visita_data["fecha"], visita_data["hora"], visita_data["notas"],
                 )
-                event_id = await asyncio.to_thread(
-                    crear_evento_visita, visita_id, nombre_v, msg.telefono,
-                    visita_data["fecha"], visita_data["hora"], visita_data["notas"]
-                )
-                if event_id:
-                    await guardar_evento_id(visita_id, event_id)
+                try:
+                    event_id = crear_evento_visita(visita_id, nombre_v, msg.telefono,
+                        visita_data["fecha"], visita_data["hora"], visita_data["notas"])
+                    if event_id:
+                        await guardar_evento_id(visita_id, event_id)
+                except Exception as e:
+                    logger.error(f"Google Calendar: error creando evento visita {visita_id}: {e}")
 
             # Cancelación de visita: Claude emitió [CANCELAR_VISITA:id]
             if cancelar_visita_id:
                 await cancelar_visita(cancelar_visita_id)
                 logger.info(f"Visita {cancelar_visita_id} cancelada via WhatsApp ({msg.telefono})")
-                event_id = await obtener_evento_id(cancelar_visita_id)
-                if event_id:
-                    await asyncio.to_thread(eliminar_evento_visita, event_id)
-                    await borrar_evento_id(cancelar_visita_id)
+                try:
+                    event_id = await obtener_evento_id(cancelar_visita_id)
+                    if event_id:
+                        eliminar_evento_visita(event_id)
+                        await borrar_evento_id(cancelar_visita_id)
+                except Exception as e:
+                    logger.error(f"Google Calendar: error cancelando visita {cancelar_visita_id}: {e}")
 
             # Reagendamiento de visita: Claude emitió [REAGENDAR_VISITA:id|fecha|hora]
             if reagendar_data:
@@ -586,12 +590,13 @@ async def webhook_handler(request: Request):
                     reagendar_data["fecha"], reagendar_data["hora"], "",
                     tipo="reagenda",
                 )
-                event_id = await obtener_evento_id(reagendar_data["id"])
-                if event_id:
-                    await asyncio.to_thread(
-                        actualizar_evento_visita, event_id, nombre_r, msg.telefono,
-                        reagendar_data["fecha"], reagendar_data["hora"]
-                    )
+                try:
+                    event_id = await obtener_evento_id(reagendar_data["id"])
+                    if event_id:
+                        actualizar_evento_visita(event_id, nombre_r, msg.telefono,
+                            reagendar_data["fecha"], reagendar_data["hora"])
+                except Exception as e:
+                    logger.error(f"Google Calendar: error reagendando visita {reagendar_data['id']}: {e}")
 
             # Handoff: Claude emitió [HANDOFF] → transferir a asesor
             if razon_handoff and not await esta_en_handoff(msg.telefono):

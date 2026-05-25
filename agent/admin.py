@@ -1595,11 +1595,15 @@ async def visita_save(
         return RedirectResponse("/admin/login", status_code=302)
 
     visita_id = await guardar_visita(telefono, nombre.strip(), fecha, hora, notas.strip())
-    event_id = await asyncio.to_thread(
-        crear_evento_visita, visita_id, nombre.strip(), telefono, fecha, hora, notas.strip()
-    )
-    if event_id:
-        await guardar_evento_id(visita_id, event_id)
+    try:
+        event_id = crear_evento_visita(visita_id, nombre.strip(), telefono, fecha, hora, notas.strip())
+        if event_id:
+            await guardar_evento_id(visita_id, event_id)
+            logger.info(f"Visita {visita_id} sincronizada con Google Calendar: {event_id}")
+        else:
+            logger.warning(f"Visita {visita_id}: crear_evento_visita retornó None")
+    except Exception as e:
+        logger.error(f"Visita {visita_id}: error Google Calendar: {e}")
 
     if enviar_wp == "1":
         if not proveedor:
@@ -1727,11 +1731,18 @@ async def visita_editar_save(
 
     await editar_visita(visita_id, nombre.strip(), fecha, hora, notas.strip())
 
-    event_id = await obtener_evento_id(visita_id)
-    if event_id:
-        await asyncio.to_thread(
-            actualizar_evento_visita, event_id, nombre.strip(), v["telefono"], fecha, hora, notas.strip()
-        )
+    try:
+        event_id = await obtener_evento_id(visita_id)
+        if event_id:
+            actualizar_evento_visita(event_id, nombre.strip(), v["telefono"], fecha, hora, notas.strip())
+            logger.info(f"Visita {visita_id} actualizada en Google Calendar: {event_id}")
+        else:
+            new_event_id = crear_evento_visita(visita_id, nombre.strip(), v["telefono"], fecha, hora, notas.strip())
+            if new_event_id:
+                await guardar_evento_id(visita_id, new_event_id)
+                logger.info(f"Visita {visita_id} creada en Google Calendar: {new_event_id}")
+    except Exception as e:
+        logger.error(f"Visita {visita_id}: error Google Calendar al editar: {e}")
 
     if enviar_wp == "1" and proveedor:
         try:
@@ -1771,8 +1782,12 @@ async def visita_cancelar(visita_id: int, request: Request):
     event_id = await obtener_evento_id(visita_id)
     await cancelar_visita(visita_id)
     if event_id:
-        await asyncio.to_thread(eliminar_evento_visita, event_id)
-        await borrar_evento_id(visita_id)
+        try:
+            eliminar_evento_visita(event_id)
+            await borrar_evento_id(visita_id)
+            logger.info(f"Visita {visita_id} eliminada de Google Calendar: {event_id}")
+        except Exception as e:
+            logger.error(f"Visita {visita_id}: error Google Calendar al cancelar: {e}")
     referer = request.headers.get("referer", "/admin/visitas")
     return RedirectResponse(referer, status_code=303)
 
