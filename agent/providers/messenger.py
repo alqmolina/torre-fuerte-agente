@@ -42,8 +42,10 @@ class ProveedorMessenger(ProveedorWhatsApp):
             return []
 
         objeto = body.get("object", "")
+        logger.info(f"Messenger webhook recibido: object={objeto!r} keys={list(body.keys())}")
         # Solo procesar eventos de Messenger o Instagram
         if objeto not in ("page", "instagram"):
+            logger.warning(f"Messenger webhook ignorado: object={objeto!r} no reconocido")
             return []
 
         mensajes = []
@@ -67,6 +69,7 @@ class ProveedorMessenger(ProveedorWhatsApp):
                 if not sender_id:
                     continue
 
+                logger.info(f"Messenger mensaje entrante: objeto={objeto} sender={sender_id} texto={texto!r}")
                 # Prefijo según canal para separar leads de WhatsApp
                 if objeto == "instagram":
                     identificador = f"ig_{sender_id}"
