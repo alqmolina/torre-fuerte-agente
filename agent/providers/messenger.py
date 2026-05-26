@@ -20,6 +20,7 @@ class ProveedorMessenger(ProveedorWhatsApp):
 
     def __init__(self):
         self.page_token = os.getenv("META_PAGE_TOKEN")
+        self.page_id = os.getenv("META_PAGE_ID", "me")
         self.verify_token = os.getenv("META_MESSENGER_VERIFY_TOKEN",
                                       os.getenv("META_VERIFY_TOKEN", "agentkit-verify"))
 
@@ -101,7 +102,7 @@ class ProveedorMessenger(ProveedorWhatsApp):
         else:
             recipient_id = telefono
 
-        url = f"https://graph.facebook.com/{_API_VERSION}/me/messages"
+        url = f"https://graph.facebook.com/{_API_VERSION}/{self.page_id}/messages"
         payload = {
             "recipient": {"id": recipient_id},
             "message": {"text": mensaje},
