@@ -300,7 +300,16 @@ async def admin_index(request: Request):
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; min-height: 100vh; }}
-    .header {{ background: #1a3c5e; color: white; padding: 16px 20px; display: flex; align-items: center; gap: 12px; }}
+    .header {{ background: #1a3c5e; color: white; padding: 12px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }}
+    .header-title {{ flex: 1; min-width: 160px; }}
+    .header-title .title {{ font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+    .header-title .sub {{ font-size: 12px; opacity: 0.7; margin-top: 1px; }}
+    .header-nav {{ display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }}
+    .nav-link {{ color: rgba(255,255,255,0.8); font-size: 12px; text-decoration: none; white-space: nowrap; padding: 4px 6px; border-radius: 4px; }}
+    .nav-link:hover {{ background: rgba(255,255,255,0.1); }}
+    .nav-link.primary {{ color: white; background: #27ae60; font-weight: 600; padding: 5px 10px; border-radius: 6px; }}
+    .nav-link.primary:hover {{ background: #219a52; }}
+    .nav-link.logout {{ color: rgba(255,255,255,0.5); }}
     .container {{ max-width: 620px; margin: 0 auto; padding: 16px; }}
     .card {{ background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); border-left: 4px solid #ccc; transition: box-shadow 0.15s; }}
     .card:hover {{ box-shadow: 0 3px 10px rgba(0,0,0,0.12); }}
@@ -311,21 +320,29 @@ async def admin_index(request: Request):
     .badge-caliente {{ background: #fde8e8; color: #c0392b; }}
     .badge-tibio {{ background: #fef3cd; color: #d68910; }}
     .badge-frio {{ background: #dbeafe; color: #1a56db; }}
+    @media (max-width: 480px) {{
+      .header {{ padding: 10px 12px; gap: 6px; }}
+      .header-title .title {{ font-size: 15px; }}
+      .header-nav {{ width: 100%; border-top: 1px solid rgba(255,255,255,0.15); padding-top: 8px; margin-top: 2px; overflow-x: auto; flex-wrap: nowrap; }}
+      .nav-link {{ font-size: 11px; padding: 4px 7px; }}
+    }}
   </style>
 </head>
 <body>
   <div class="header">
-    <div style="flex:1">
-      <div style="font-size:18px;font-weight:600">Torre Fuerte · Panel Asesor</div>
-      <div style="font-size:13px;opacity:0.7;margin-top:2px">Conversaciones en transferencia</div>
+    <div class="header-title">
+      <div class="title">Torre Fuerte · Panel Asesor</div>
+      <div class="sub">Conversaciones en transferencia</div>
     </div>
     {badge}
-    <a href="/admin/leads/nuevo" style="color:white;background:#27ae60;border-radius:6px;padding:5px 10px;font-size:12px;text-decoration:none;font-weight:600;margin-right:8px;white-space:nowrap">➕ Lead</a>
-    <a href="/admin/buscar" style="color:rgba(255,255,255,0.8);font-size:12px;text-decoration:none;margin-right:12px">🔍 Buscar</a>
-    <a href="/admin/visitas" style="color:rgba(255,255,255,0.8);font-size:12px;text-decoration:none;margin-right:12px">📅 Visitas</a>
-    <a href="/admin/broadcast" style="color:rgba(255,255,255,0.8);font-size:12px;text-decoration:none;margin-right:12px">📢 Broadcast</a>
-    <a href="/admin/dashboard" style="color:rgba(255,255,255,0.8);font-size:12px;text-decoration:none;margin-right:12px">📊 Métricas</a>
-    <a href="/admin/logout" style="color:rgba(255,255,255,0.6);font-size:12px;text-decoration:none">Salir</a>
+    <nav class="header-nav">
+      <a href="/admin/leads/nuevo" class="nav-link primary">➕ Lead</a>
+      <a href="/admin/buscar" class="nav-link">🔍 Buscar</a>
+      <a href="/admin/visitas" class="nav-link">📅 Visitas</a>
+      <a href="/admin/broadcast" class="nav-link">📢 Broadcast</a>
+      <a href="/admin/dashboard" class="nav-link">📊 Métricas</a>
+      <a href="/admin/logout" class="nav-link logout">Salir</a>
+    </nav>
   </div>
   <div class="container">
     {content}
@@ -465,9 +482,9 @@ async def admin_chat(telefono: str, request: Request):
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             background: #e8edf2; height: 100dvh; display: flex; flex-direction: column; }}
-    .header {{ background: #1a3c5e; color: white; padding: 12px 16px;
-               display: flex; align-items: center; gap: 12px; flex-shrink: 0; }}
-    .back {{ color: white; text-decoration: none; font-size: 22px; line-height: 1; }}
+    .header {{ background: #1a3c5e; color: white; padding: 10px 12px;
+               display: flex; align-items: center; gap: 8px; flex-shrink: 0; }}
+    .back {{ color: white; text-decoration: none; font-size: 22px; line-height: 1; flex-shrink: 0; }}
     .messages {{ flex: 1; overflow-y: auto; padding: 16px; }}
     .input-area {{ background: white; padding: 10px 14px; display: flex; gap: 10px;
                    align-items: flex-end; flex-shrink: 0; border-top: 1px solid #e0e0e0; }}
@@ -480,9 +497,15 @@ async def admin_chat(telefono: str, request: Request):
                  flex-shrink: 0; display: flex; align-items: center; justify-content: center; }}
     .send-btn:disabled {{ opacity: 0.4; cursor: not-allowed; }}
     .close-btn {{ background: rgba(255,255,255,0.15); color: white;
-                  border: 1px solid rgba(255,255,255,0.3); padding: 6px 14px;
+                  border: 1px solid rgba(255,255,255,0.3); padding: 6px 10px;
                   border-radius: 20px; font-size: 12px; cursor: pointer; white-space: nowrap; }}
     .close-btn:hover {{ background: rgba(231,76,60,0.8); border-color: transparent; }}
+    .btn-label {{ display: inline; }}
+    @media (max-width: 540px) {{
+      .header {{ gap: 5px; padding: 8px 10px; }}
+      .close-btn {{ padding: 5px 7px; font-size: 13px; }}
+      .btn-label {{ display: none; }}
+    }}
     #sending {{ display:none; position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
                 background:#333; color:white; padding:6px 16px; border-radius:20px; font-size:13px; }}
     .attach-btn {{ background: none; border: none; font-size: 22px; cursor: pointer;
@@ -507,23 +530,23 @@ async def admin_chat(telefono: str, request: Request):
     </div>
     <a href="/admin/visita/{tel_esc}"
        style="background:rgba(255,255,255,0.15);color:white;border:1px solid rgba(255,255,255,0.3);
-              padding:6px 12px;border-radius:20px;font-size:12px;text-decoration:none;white-space:nowrap">
-      📅 Agendar
+              padding:6px 10px;border-radius:20px;font-size:12px;text-decoration:none;white-space:nowrap">
+      📅<span class="btn-label"> Agendar</span>
     </a>
     <a href="/admin/lead/{tel_esc}/editar"
        style="background:rgba(255,255,255,0.15);color:white;border:1px solid rgba(255,255,255,0.3);
-              padding:6px 12px;border-radius:20px;font-size:12px;text-decoration:none;white-space:nowrap">
-      ✏️ Editar
+              padding:6px 10px;border-radius:20px;font-size:12px;text-decoration:none;white-space:nowrap">
+      ✏️<span class="btn-label"> Editar</span>
     </a>
     <a href="/admin/lead/{tel_esc}/historial"
        style="background:rgba(255,255,255,0.15);color:white;border:1px solid rgba(255,255,255,0.3);
-              padding:6px 12px;border-radius:20px;font-size:12px;text-decoration:none;white-space:nowrap">
-      📋 Historial
+              padding:6px 10px;border-radius:20px;font-size:12px;text-decoration:none;white-space:nowrap">
+      📋<span class="btn-label"> Historial</span>
     </a>
     <form method="post" action="/admin/close/{tel_esc}" style="margin:0">
       <button type="submit" class="close-btn"
               onclick="return confirm('¿Cerrar handoff y devolver al bot?')">
-        Cerrar handoff
+        ✅<span class="btn-label"> Cerrar</span>
       </button>
     </form>
     <form method="post" action="/admin/delete/{tel_esc}" style="margin:0">
@@ -533,9 +556,9 @@ async def admin_chat(telefono: str, request: Request):
       </button>
     </form>
     <form method="post" action="/admin/lead/{tel_esc}/eliminar" style="margin:0">
-      <button type="submit" class="close-btn" style="background:rgba(231,76,60,0.35);border-color:rgba(231,76,60,0.7);color:#c0392b;font-size:11px;padding:0 8px;white-space:nowrap"
+      <button type="submit" class="close-btn" style="background:rgba(231,76,60,0.35);border-color:rgba(231,76,60,0.7);color:#fff;white-space:nowrap"
               onclick="return confirm('⚠️ ¿Eliminar COMPLETAMENTE este lead de la base de datos? Se borrarán todos sus datos, visitas, notas e historial. Esta acción NO se puede deshacer.')">
-        Eliminar lead
+        ❌<span class="btn-label"> Eliminar</span>
       </button>
     </form>
   </div>
