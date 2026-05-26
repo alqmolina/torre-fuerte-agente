@@ -300,16 +300,24 @@ async def admin_index(request: Request):
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; min-height: 100vh; }}
-    .header {{ background: #1a3c5e; color: white; padding: 12px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }}
-    .header-title {{ flex: 1; min-width: 160px; }}
+    .header {{ background: #1a3c5e; color: white; padding: 12px 16px; display: flex; align-items: center; gap: 10px; position: relative; }}
+    .header-title {{ flex: 1; min-width: 0; }}
     .header-title .title {{ font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
     .header-title .sub {{ font-size: 12px; opacity: 0.7; margin-top: 1px; }}
-    .header-nav {{ display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }}
-    .nav-link {{ color: rgba(255,255,255,0.8); font-size: 12px; text-decoration: none; white-space: nowrap; padding: 4px 6px; border-radius: 4px; }}
-    .nav-link:hover {{ background: rgba(255,255,255,0.1); }}
-    .nav-link.primary {{ color: white; background: #27ae60; font-weight: 600; padding: 5px 10px; border-radius: 6px; }}
-    .nav-link.primary:hover {{ background: #219a52; }}
-    .nav-link.logout {{ color: rgba(255,255,255,0.5); }}
+    .btn-lead {{ color: white; background: #27ae60; font-weight: 600; font-size: 13px; padding: 6px 12px; border-radius: 6px; text-decoration: none; white-space: nowrap; }}
+    .btn-lead:hover {{ background: #219a52; }}
+    .btn-logout {{ color: rgba(255,255,255,0.6); font-size: 12px; text-decoration: none; white-space: nowrap; }}
+    .btn-logout:hover {{ color: white; }}
+    .menu-wrap {{ position: relative; }}
+    .menu-btn {{ background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.25); padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; white-space: nowrap; display: flex; align-items: center; gap: 6px; }}
+    .menu-btn:hover {{ background: rgba(255,255,255,0.25); }}
+    .menu-btn .arrow {{ font-size: 10px; transition: transform 0.15s; }}
+    .menu-btn.open .arrow {{ transform: rotate(180deg); }}
+    .dropdown {{ display: none; position: absolute; top: calc(100% + 6px); right: 0; background: white; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.18); min-width: 180px; overflow: hidden; z-index: 999; }}
+    .dropdown.show {{ display: block; }}
+    .dropdown a {{ display: flex; align-items: center; gap: 10px; padding: 12px 16px; font-size: 14px; color: #1a3c5e; text-decoration: none; font-weight: 500; }}
+    .dropdown a:hover {{ background: #f0f4f8; }}
+    .dropdown a + a {{ border-top: 1px solid #f0f4f8; }}
     .container {{ max-width: 620px; margin: 0 auto; padding: 16px; }}
     .card {{ background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); border-left: 4px solid #ccc; transition: box-shadow 0.15s; }}
     .card:hover {{ box-shadow: 0 3px 10px rgba(0,0,0,0.12); }}
@@ -320,12 +328,6 @@ async def admin_index(request: Request):
     .badge-caliente {{ background: #fde8e8; color: #c0392b; }}
     .badge-tibio {{ background: #fef3cd; color: #d68910; }}
     .badge-frio {{ background: #dbeafe; color: #1a56db; }}
-    @media (max-width: 480px) {{
-      .header {{ padding: 10px 12px; gap: 6px; }}
-      .header-title .title {{ font-size: 15px; }}
-      .header-nav {{ width: 100%; border-top: 1px solid rgba(255,255,255,0.15); padding-top: 8px; margin-top: 2px; overflow-x: auto; flex-wrap: nowrap; }}
-      .nav-link {{ font-size: 11px; padding: 4px 7px; }}
-    }}
   </style>
 </head>
 <body>
@@ -335,20 +337,38 @@ async def admin_index(request: Request):
       <div class="sub">Conversaciones en transferencia</div>
     </div>
     {badge}
-    <nav class="header-nav">
-      <a href="/admin/leads/nuevo" class="nav-link primary">➕ Lead</a>
-      <a href="/admin/buscar" class="nav-link">🔍 Buscar</a>
-      <a href="/admin/visitas" class="nav-link">📅 Visitas</a>
-      <a href="/admin/broadcast" class="nav-link">📢 Broadcast</a>
-      <a href="/admin/dashboard" class="nav-link">📊 Métricas</a>
-      <a href="/admin/logout" class="nav-link logout">Salir</a>
-    </nav>
+    <a href="/admin/leads/nuevo" class="btn-lead">➕ Lead</a>
+    <div class="menu-wrap">
+      <button class="menu-btn" id="menuBtn" onclick="toggleMenu(event)">
+        ☰ Menú <span class="arrow">▼</span>
+      </button>
+      <div class="dropdown" id="dropdown">
+        <a href="/admin/buscar">🔍 Buscar leads</a>
+        <a href="/admin/visitas">📅 Visitas</a>
+        <a href="/admin/broadcast">📢 Broadcast</a>
+        <a href="/admin/dashboard">📊 Métricas</a>
+      </div>
+    </div>
+    <a href="/admin/logout" class="btn-logout">Salir</a>
   </div>
   <div class="container">
     {content}
     <p style="text-align:center;font-size:12px;color:#bbb;margin-top:20px">Actualiza cada 15 segundos</p>
   </div>
-  <script>setTimeout(() => location.reload(), 15000);</script>
+  <script>
+    function toggleMenu(e) {{
+      e.stopPropagation();
+      const btn = document.getElementById('menuBtn');
+      const dd = document.getElementById('dropdown');
+      btn.classList.toggle('open');
+      dd.classList.toggle('show');
+    }}
+    document.addEventListener('click', () => {{
+      document.getElementById('menuBtn').classList.remove('open');
+      document.getElementById('dropdown').classList.remove('show');
+    }});
+    setTimeout(() => location.reload(), 15000);
+  </script>
 </body>
 </html>"""
 
