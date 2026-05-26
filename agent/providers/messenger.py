@@ -23,6 +23,43 @@ class ProveedorMessenger(ProveedorWhatsApp):
         self.page_id = os.getenv("META_PAGE_ID", "me")
         self.verify_token = os.getenv("META_MESSENGER_VERIFY_TOKEN",
                                       os.getenv("META_VERIFY_TOKEN", "agentkit-verify"))
+        self._page_access_token: str | None = None  # cache del Page Access Token
+
+    async def _obtener_page_access_token(self) -> str | None:
+        """
+        El System User token no sirve directamente para Messenger Send API.
+        Se necesita un Page Access Token, que se obtiene llamando a /{page_id}?fields=access_token.
+        El resultado se cachea para no llamar la API en cada mensaje.
+        """
+        if self._page_access_token:
+            return self._page_access_token
+
+        if not self.page_token:
+            return None
+
+        # Si el page_id es "me", no podemos intercambiar el token — usar directo
+        if not self.page_id or self.page_id == "me":
+            logger.warning("Messenger: META_PAGE_ID no configurado, usando token directo")
+            return self.page_token
+
+        url = f"https://graph.facebook.com/{_API_VERSION}/{self.page_id}"
+        params = {"fields": "access_token", "access_token": self.page_token}
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get(url, params=params)
+                if r.status_code == 200:
+                    data = r.json()
+                    token = data.get("access_token")
+                    if token:
+                        self._page_access_token = token
+                        logger.info("Messenger: Page Access Token obtenido correctamente")
+                        return token
+                logger.error(f"Messenger: error obteniendo Page Access Token: {r.status_code} {r.text}")
+        except Exception as e:
+            logger.error(f"Messenger: excepción obteniendo Page Access Token: {e}")
+
+        # Fallback: usar el token original
+        return self.page_token
 
     async def validar_webhook(self, request: Request) -> int | None:
         """Meta requiere verificación GET con hub.verify_token."""
@@ -90,6 +127,7 @@ class ProveedorMessenger(ProveedorWhatsApp):
         """
         Envía un mensaje al lead via Messenger o Instagram.
         El identificador tiene prefijo 'fb_' o 'ig_' que se elimina para obtener el sender_id real.
+        Intercambia el System User token por un Page Access Token antes de enviar.
         """
         if not self.page_token:
             logger.warning("META_PAGE_TOKEN no configurado — no se puede enviar mensaje")
@@ -102,6 +140,12 @@ class ProveedorMessenger(ProveedorWhatsApp):
         else:
             recipient_id = telefono
 
+        # Obtener Page Access Token (necesario para Messenger Send API)
+        page_token = await self._obtener_page_access_token()
+        if not page_token:
+            logger.error("Messenger: no se pudo obtener Page Access Token")
+            return False
+
         url = f"https://graph.facebook.com/{_API_VERSION}/{self.page_id}/messages"
         payload = {
             "recipient": {"id": recipient_id},
@@ -109,13 +153,15 @@ class ProveedorMessenger(ProveedorWhatsApp):
             "messaging_type": "RESPONSE",
         }
         headers = {"Content-Type": "application/json"}
-        params = {"access_token": self.page_token}
+        params = {"access_token": page_token}
 
         try:
             async with httpx.AsyncClient(timeout=15) as client:
                 r = await client.post(url, json=payload, headers=headers, params=params)
                 if r.status_code != 200:
                     logger.error(f"Error Messenger API {r.status_code}: {r.text}")
+                    # Si falla con el page token cacheado, limpiar cache para reintentar la próxima vez
+                    self._page_access_token = None
                 return r.status_code == 200
         except Exception as e:
             logger.error(f"Excepción enviando mensaje Messenger a {telefono}: {e}")
