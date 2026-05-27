@@ -2655,6 +2655,10 @@ async def admin_pipeline(request: Request):
               <div class="card-actions">
                 <a href="/admin/chat/{tel_esc}" class="btn-chat">💬 Chat</a>
                 {accion_html}
+                <form method="post" action="/admin/lead/{tel_esc}/eliminar" style="margin:0;display:inline"
+                      onsubmit="return confirm('¿Eliminar este lead y toda su información?')">
+                  <button type="submit" class="btn-eliminar-pipeline">🗑️</button>
+                </form>
               </div>
             </div>"""
 
@@ -2727,6 +2731,8 @@ async def admin_pipeline(request: Request):
     .btn-intervenir {{ background: #e67e22; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }}
     .btn-intervenir:hover {{ background: #d35400; }}
     .badge-handoff {{ background: #fde8e8; color: #c0392b; font-size: 11px; padding: 4px 10px; border-radius: 6px; font-weight: 600; }}
+    .btn-eliminar-pipeline {{ background: transparent; color: #bbb; border: 1px solid #e0e0e0; padding: 5px 8px; border-radius: 6px; font-size: 13px; cursor: pointer; line-height: 1; }}
+    .btn-eliminar-pipeline:hover {{ background: #fde8e8; color: #c0392b; border-color: #e74c3c; }}
 
     .empty-col {{ text-align: center; padding: 32px 16px; color: #aaa; font-size: 13px; }}
 
@@ -2828,6 +2834,10 @@ async def admin_pipeline(request: Request):
              <button type="submit" class="btn-intervenir" onclick="return confirm('¿Intervenir en esta conversación?')">🚀 Intervenir</button>
            </form>`;
 
+      const eliminarForm = `<form method="post" action="/admin/lead/${{tel}}/eliminar" style="margin:0;display:inline"
+        onsubmit="return confirm('¿Eliminar este lead y toda su información?')">
+        <button type="submit" class="btn-eliminar-pipeline">🗑️</button>
+      </form>`;
       return `<div class="lead-card ${{tempKey}}">
         <div class="card-top">
           <span class="lead-nombre">${{nombre}}</span>
@@ -2842,6 +2852,7 @@ async def admin_pipeline(request: Request):
         <div class="card-actions">
           <a href="/admin/chat/${{tel}}" class="btn-chat">💬 Chat</a>
           ${{accionHtml}}
+          ${{eliminarForm}}
         </div>
       </div>`;
     }}
