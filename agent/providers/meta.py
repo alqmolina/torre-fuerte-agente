@@ -135,8 +135,12 @@ class ProveedorMeta(ProveedorWhatsApp):
                 "image": {"link": url_media, "caption": caption},
             }
 
-        async with httpx.AsyncClient() as client:
-            r = await client.post(api_url, json=payload, headers=headers)
-            if r.status_code != 200:
-                logger.error(f"Error Meta media: {r.status_code} — {r.text}")
-            return r.status_code == 200
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                r = await client.post(api_url, json=payload, headers=headers)
+                if r.status_code != 200:
+                    logger.error(f"Error Meta media: {r.status_code} — {r.text}")
+                return r.status_code == 200
+        except Exception as e:
+            logger.error(f"Excepción enviando media a Meta: {e}")
+            return False
