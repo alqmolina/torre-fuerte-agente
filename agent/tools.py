@@ -24,106 +24,88 @@ def _ahora_colombia() -> str:
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 EMAIL_LEADS = os.getenv("EMAIL_LEADS", "")
 
-PLANOS_DIR = "knowledge/planos"
-RENDERS_DIR = "knowledge/renders"
-
-MAPA_PLANOS = {
-    "301": "301.pdf",
-    "302": "302.pdf",
-    "303": "303.pdf",
-    "401": "401.pdf",
-    "402": "402.pdf",
-    "501": "501.pdf",
-    "502": "502.pdf",
-    "601": "601.pdf",
-    "602": "602.pdf",
-    "603": "603.pdf",
-    "701": "701.pdf",
-    "702": "702.pdf",
-    "801": "801.pdf",
-    "802": "802.pdf",
-    "901": "901.pdf",
-    "902": "902.pdf",
-    "903": "903.pdf",
-    "1011": "1011.pdf",
-    "1012": "1012.pdf",
-    "ph1111": "PH1111.pdf",
-    "ph1112": "PH1112.pdf",
-    "1111": "PH1111.pdf",
-    "1112": "PH1112.pdf",
-    "todo": "torre-fuerte-Aptos-todo.pdf",
-    "todos": "torre-fuerte-Aptos-todo.pdf",
-}
-
-# URLs de renders — todas servidas directamente desde Railway
-_RENDERS_401 = [
-    "Renders-TF.jpg", "sala.jpg", "sala-comedor.jpg",
-    "cocina.jpg", "bano.jpg", "hab1.jpg", "hab2.jpg",
-    "video-401.mp4",
-]
-_RENDERS_PH = [f"PH_{i:02d}.jpg" for i in range(1, 17)]
-
-def _urls_401(base_url: str) -> list[str]:
-    return [f"{base_url}/renders/render-401/{f}" for f in _RENDERS_401]
-
-def _urls_ph(base_url: str) -> list[str]:
-    return [f"{base_url}/renders/penthouse-1111/{f}" for f in _RENDERS_PH]
-
-MAPA_RENDERS_URLS = {}
-
-# Carpeta local de renders (solo para test_local.py)
-MAPA_RENDERS = {
-    "401": "render-401",
-    "penthouse": "penthouse-1111",
-    "penthouse1111": "penthouse-1111",
-    "ph1111": "penthouse-1111",
-    "1111": "penthouse-1111",
-}
-
-# Extensiones de archivo que se envían como media
+KNOWLEDGE_DIR = "knowledge"
 EXTENSIONES_MEDIA = {".jpg", ".jpeg", ".png", ".gif", ".mp4", ".pdf"}
+
+# ── Helpers de configuración ──────────────────────────────────────────────────
+
+def cargar_info_negocio() -> dict:
+    """Carga la configuración completa desde config/business.yaml."""
+    try:
+        with open("config/business.yaml", "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        logger.error("config/business.yaml no encontrado")
+        return {}
+
+
+def _cfg() -> dict:
+    """Alias corto de cargar_info_negocio para uso interno."""
+    return cargar_info_negocio()
+
+
+def _nombre_corto() -> str:
+    """Retorna el nombre corto del negocio para usar en emails y mensajes."""
+    cfg = _cfg()
+    return cfg.get("negocio", {}).get("nombre_corto") or cfg.get("negocio", {}).get("nombre", "")
+
+
+def _normalizar_codigo(codigo: str) -> str:
+    """Normaliza un código de apartamento: minúsculas, sin espacios ni guiones extra."""
+    return codigo.lower().replace("apto", "").replace("-", "").replace(" ", "").strip()
 
 
 def obtener_plano(codigo_apto: str) -> str | None:
-    """Retorna la ruta al PDF de plano dado un código de apartamento."""
-    codigo = codigo_apto.lower().replace("apto", "").replace("-", "").replace(" ", "").strip()
-    archivo = MAPA_PLANOS.get(codigo)
+    """Retorna la ruta al PDF de plano dado un código de apartamento.
+    Lee el mapeo desde config/business.yaml → planos."""
+    codigo = _normalizar_codigo(codigo_apto)
+    mapa = _cfg().get("planos", {})
+    archivo = mapa.get(codigo)
     if not archivo:
         return None
-    ruta = os.path.join(PLANOS_DIR, archivo)
+    ruta = os.path.join(KNOWLEDGE_DIR, "planos", archivo)
     return ruta if os.path.exists(ruta) else None
 
 
+def _grupo_renders(clave_norm: str) -> dict | None:
+    """Encuentra el grupo de renders que corresponde a la clave normalizada."""
+    for grupo in _cfg().get("renders", []):
+        claves_norm = [_normalizar_codigo(c) for c in grupo.get("claves", [])]
+        if clave_norm in claves_norm:
+            return grupo
+    return None
+
+
 def obtener_renders(clave: str) -> list[str]:
-    """
-    Retorna rutas locales de renders si existen (desarrollo).
-    En producción los renders se sirven desde RENDERS_BASE_URL.
-    """
-    clave_norm = clave.lower().replace("apto", "").replace("-", "").replace(" ", "").strip()
-    carpeta = MAPA_RENDERS.get(clave_norm)
-    if not carpeta:
+    """Retorna rutas locales de renders (para test_local.py o si no hay BASE_URL)."""
+    grupo = _grupo_renders(_normalizar_codigo(clave))
+    if not grupo:
         return []
-
-    ruta_carpeta = os.path.join(RENDERS_DIR, carpeta)
-    if not os.path.isdir(ruta_carpeta):
+    carpeta = os.path.join(KNOWLEDGE_DIR, grupo["carpeta"])
+    if not os.path.isdir(carpeta):
         return []
-
     archivos = sorted([
-        os.path.join(ruta_carpeta, f)
-        for f in os.listdir(ruta_carpeta)
+        os.path.join(carpeta, f)
+        for f in os.listdir(carpeta)
         if not f.startswith(".") and os.path.splitext(f)[1].lower() in EXTENSIONES_MEDIA
     ])
     return archivos
 
 
 def obtener_urls_renders(clave: str, base_url: str = "") -> list[str]:
-    """Retorna URLs de renders servidas directamente desde Railway."""
-    clave_norm = clave.lower().replace("apto", "").replace("-", "").replace(" ", "").strip()
-    if clave_norm == "401":
-        return _urls_401(base_url)
-    if clave_norm in ("penthouse", "penthouse1111", "ph1111", "1111"):
-        return _urls_ph(base_url)
-    return []
+    """Retorna URLs públicas de renders servidas desde Railway.
+    Las rutas se leen de config/business.yaml → renders."""
+    grupo = _grupo_renders(_normalizar_codigo(clave))
+    if not grupo:
+        return []
+    carpeta = grupo["carpeta"]
+    urls = []
+    for img in grupo.get("imagenes", []):
+        urls.append(f"{base_url}/knowledge/{carpeta}/{img}")
+    video = grupo.get("video")
+    if video:
+        urls.append(f"{base_url}/knowledge/{carpeta}/{video}")
+    return urls
 
 
 def extraer_marcadores_plano(texto: str) -> tuple[str, list[str]]:
@@ -162,10 +144,11 @@ def enviar_email_lead(telefono: str, nombre: str, email: str = "", apto: str = "
         logger.warning("RESEND_API_KEY o EMAIL_LEADS no configurados")
         return False
     try:
+        negocio = _nombre_corto()
         icono = ICONOS_TEMPERATURA.get(temperatura.lower(), "")
         temp_texto = f"{icono} {temperatura.upper()}" if temperatura else "No determinada"
         cuerpo = (
-            f"Nuevo lead interesado en Torre Fuerte Apartamentos\n\n"
+            f"Nuevo lead interesado en {negocio}\n\n"
             f"Nombre:         {nombre}\n"
             f"Teléfono:       {telefono}\n"
             f"Email:          {email or 'No proporcionado'}\n"
@@ -179,9 +162,9 @@ def enviar_email_lead(telefono: str, nombre: str, email: str = "", apto: str = "
             "https://api.resend.com/emails",
             headers={"Authorization": f"Bearer {RESEND_API_KEY}"},
             json={
-                "from": "Torre Fuerte <onboarding@resend.dev>",
+                "from": f"{negocio} <onboarding@resend.dev>",
                 "to": [EMAIL_LEADS],
-                "subject": f"[{temp_texto}] Nuevo lead Torre Fuerte — {nombre}",
+                "subject": f"[{temp_texto}] Nuevo lead {negocio} — {nombre}",
                 "text": cuerpo,
             },
             timeout=15,
@@ -285,11 +268,12 @@ def enviar_email_handoff(
         icono = ICONOS_TEMPERATURA.get(temperatura.lower(), "🔔")
         temp_texto = f"{icono} {temperatura.upper()}" if temperatura else "No determinada"
         tel_limpio = telefono.lstrip("+")
+        negocio = _nombre_corto()
         cuerpo_html = f"""
 <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
   <div style="background:#1a3c5e;padding:20px;border-radius:8px 8px 0 0">
     <h2 style="color:#fff;margin:0">🔔 Transferencia a Asesor</h2>
-    <p style="color:#aac8e4;margin:4px 0 0">Torre Fuerte Apartamentos</p>
+    <p style="color:#aac8e4;margin:4px 0 0">{negocio}</p>
   </div>
   <div style="background:#f5f8fb;padding:24px;border-radius:0 0 8px 8px;border:1px solid #dce8f3">
     <table style="width:100%;border-collapse:collapse">
@@ -330,7 +314,7 @@ def enviar_email_handoff(
 </div>
 """
         cuerpo_texto = (
-            f"TRANSFERENCIA A ASESOR — Torre Fuerte\n\n"
+            f"TRANSFERENCIA A ASESOR — {negocio}\n\n"
             f"Teléfono:     +{tel_limpio}\n"
             f"Nombre:       {nombre}\n"
             f"Email:        {email or 'No proporcionado'}\n"
@@ -348,7 +332,7 @@ def enviar_email_handoff(
             "https://api.resend.com/emails",
             headers={"Authorization": f"Bearer {RESEND_API_KEY}"},
             json={
-                "from": "Torre Fuerte <onboarding@resend.dev>",
+                "from": f"{negocio} <onboarding@resend.dev>",
                 "to": [EMAIL_LEADS],
                 "subject": f"🔔 [{temp_texto}] {nombre} — +{tel_limpio}",
                 "html": cuerpo_html,
@@ -366,37 +350,9 @@ def enviar_email_handoff(
         return False
 
 
-def cargar_info_negocio() -> dict:
-    """Carga la información del negocio desde business.yaml."""
-    try:
-        with open("config/business.yaml", "r", encoding="utf-8") as f:
-            return yaml.safe_load(f)
-    except FileNotFoundError:
-        logger.error("config/business.yaml no encontrado")
-        return {}
-
-
 def obtener_disponibilidad() -> list[dict]:
-    """Retorna la lista de apartamentos disponibles."""
-    return [
-        {"apto": "A-301", "nivel": 3, "area": 100, "hab": 2, "precio": 1087000000},
-        {"apto": "B-302", "nivel": 3, "area": 134.87, "hab": 3, "precio": 1448161000},
-        {"apto": "D-401", "nivel": 4, "area": 119, "hab": 3, "precio": 1288200000},
-        {"apto": "E-402", "nivel": 4, "area": 187.61, "hab": 4, "precio": 1994883000},
-        {"apto": "F-501", "nivel": 5, "area": 114.24, "hab": 3, "precio": 1242672000},
-        {"apto": "G-502", "nivel": 5, "area": 159.58, "hab": 4, "precio": 1744674000},
-        {"apto": "A'-601", "nivel": 6, "area": 98.87, "hab": 2, "precio": 1087861000},
-        {"apto": "B'-602", "nivel": 6, "area": 139.53, "hab": 3, "precio": 1541350000},
-        {"apto": "D-701", "nivel": 7, "area": 119, "hab": 3, "precio": 1298700000},
-        {"apto": "E-702", "nivel": 7, "area": 187.96, "hab": 4, "precio": 2043988000},
-        {"apto": "F-801", "nivel": 8, "area": 114.24, "hab": 3, "precio": 1253172000},
-        {"apto": "G-802", "nivel": 8, "area": 159.58, "hab": 4, "precio": 1755174000},
-        {"apto": "B-902", "nivel": 9, "area": 134.72, "hab": 3, "precio": 1467616000},
-        {"apto": "D-1011", "nivel": 10, "area": 119, "hab": 3, "precio": 1309200000},
-        {"apto": "E-1012", "nivel": 10, "area": 187.61, "hab": 4, "precio": 2050883000},
-        {"apto": "PH-1111", "nivel": "11-12", "area": 247.06, "hab": 4, "precio": 3407898000},
-        {"apto": "PH-1112", "nivel": "11-12", "area": 301.24, "hab": 4, "precio": 4128492000},
-    ]
+    """Retorna la lista de apartamentos desde config/business.yaml → disponibilidad."""
+    return _cfg().get("disponibilidad", [])
 
 
 def registrar_lead(telefono: str, nombre: str, interes: str, presupuesto: str = "") -> dict:
@@ -423,7 +379,7 @@ def exportar_leads_excel(leads: list[dict]) -> str:
     """Genera o sobreescribe data/leads.xlsx con todos los leads. Retorna la ruta."""
     wb = Workbook()
     ws = wb.active
-    ws.title = "Leads Torre Fuerte"
+    ws.title = _cfg().get("excel", {}).get("hoja_leads", "Leads")
 
     header_font = Font(bold=True, color="FFFFFF", size=11)
     header_fill = PatternFill(fill_type="solid", fgColor=_HEADER_COLOR)
@@ -475,7 +431,7 @@ def exportar_visitas_excel(visitas: list[dict]) -> str:
     """Genera data/visitas.xlsx con todas las visitas. Retorna la ruta."""
     wb = Workbook()
     ws = wb.active
-    ws.title = "Visitas Torre Fuerte"
+    ws.title = _cfg().get("excel", {}).get("hoja_visitas", "Visitas")
 
     header_font = Font(bold=True, color="FFFFFF", size=11)
     header_fill = PatternFill(fill_type="solid", fgColor=_HEADER_COLOR)

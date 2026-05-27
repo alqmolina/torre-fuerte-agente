@@ -101,45 +101,22 @@ async def _notificar_handoff(telefono: str, nombre: str, temperatura: str, razon
 
 
 def _mensaje_seguimiento(nombre: str, temperatura: str, numero: int, idioma: str) -> str:
-    """Compone el mensaje de seguimiento según temperatura, número y idioma."""
-    temp = temperatura.lower().replace("í", "i")
+    """Compone el mensaje de seguimiento leyendo plantillas de config/business.yaml."""
+    from agent.tools import cargar_info_negocio
+    cfg = cargar_info_negocio()
+    negocio = cfg.get("negocio", {}).get("nombre_corto") or cfg.get("negocio", {}).get("nombre", "")
     n = nombre if nombre and nombre != "Desconocido" else ""
-    s_es = f"¡Hola{' ' + n if n else ''}!"
-    s_en = f"Hi{' ' + n if n else ''}!"
+    temp = temperatura.lower().replace("í", "i")
+    lang = "en" if idioma == "en" else "es"
+    fallback = f"¡Hola{' ' + n if n else ''}! 👋 Solo quería hacer seguimiento a tu consulta. ¡Seguimos disponibles para ayudarte! 🏠"
 
-    msgs: dict = {
-        "es": {
-            "caliente": {
-                1: f"{s_es} 👋 Solo quería hacer seguimiento a tu consulta sobre Torre Fuerte Apartamentos. ¿Pudiste revisar la información que te compartí? Estoy aquí para resolver cualquier duda 🏠✨",
-                2: f"{s_es} 😊 Los apartamentos en Torre Fuerte tienen disponibilidad limitada. ¿Te gustaría agendar una visita al proyecto o hablar con uno de nuestros asesores?",
-            },
-            "tibio": {
-                1: f"{s_es} 👋 Quería recordarte que en Torre Fuerte Apartamentos seguimos disponibles para ayudarte. ¿Tienes alguna pregunta pendiente sobre el proyecto? 🏠",
-                2: f"{s_es} 😊 Este es nuestro último mensaje de seguimiento. Si decides retomar tu búsqueda de apartamento en Laureles, estaremos encantados de ayudarte. ¡Que tengas un excelente día!",
-            },
-            "frio": {
-                1: f"{s_es} 👋 Vimos que estuviste conociendo Torre Fuerte Apartamentos en Laureles, Medellín. Si tienes alguna pregunta o quieres más información, con gusto te ayudamos 🏠",
-                2: f"{s_es} 😊 Este es nuestro último mensaje. Si en algún momento retomas tu búsqueda de apartamento en Medellín, Torre Fuerte tiene opciones únicas en el corazón de Laureles. ¡Mucho éxito!",
-            },
-        },
-        "en": {
-            "caliente": {
-                1: f"{s_en} 👋 Just following up on your inquiry about Torre Fuerte Apartments. Did you get a chance to review the information I shared? I'm here to answer any questions 🏠✨",
-                2: f"{s_en} 😊 Our apartments have limited availability. Would you like to schedule a visit to the project or speak with one of our advisors?",
-            },
-            "tibio": {
-                1: f"{s_en} 👋 Just a reminder that we're here to help at Torre Fuerte Apartments. Do you have any pending questions about the project or available units? 🏠",
-                2: f"{s_en} 😊 This is our last follow-up message. If you ever decide to resume your apartment search in Laureles, we'd love to hear from you. Have a great day!",
-            },
-            "frio": {
-                1: f"{s_en} 👋 We noticed you were exploring Torre Fuerte Apartments in Laureles, Medellín. If you have any questions or would like more information, we're happy to help 🏠",
-                2: f"{s_en} 😊 This is our last message. If you ever resume your apartment search in Medellín, Torre Fuerte has unique options in the heart of Laureles. Best of luck!",
-            },
-        },
-    }
-    lang_msgs = msgs.get("en" if idioma == "en" else "es", msgs["es"])
-    temp_msgs = lang_msgs.get(temp, lang_msgs.get("frio", {}))
-    return temp_msgs.get(numero, f"{s_es} 👋 Solo quería hacer seguimiento a tu consulta sobre Torre Fuerte. ¡Seguimos disponibles para ayudarte! 🏠")
+    plantillas = cfg.get("mensajes", {}).get("seguimiento", {}).get(lang, {}).get(temp)
+    if not plantillas:
+        plantillas = cfg.get("mensajes", {}).get("seguimiento", {}).get(lang, {}).get("frio", [])
+    if not plantillas or numero < 1 or numero > len(plantillas):
+        return fallback
+
+    return plantillas[numero - 1].format(nombre=n or "!", negocio=negocio)
 
 
 async def _tarea_seguimiento_leads() -> None:
@@ -179,16 +156,16 @@ async def _tarea_handoff_inactivos() -> None:
                 resumen_in = await generar_resumen_handoff(historial_in, nombre, temperatura, idioma)
                 await activar_handoff(telefono, "inactividad 20 minutos", nombre, resumen_in)
 
-                if idioma == "en":
-                    msg_lead = (
-                        f"Hi {nombre}! 👋 A Torre Fuerte advisor will reach out to you shortly "
-                        f"to continue with your inquiry. 🏠✨"
-                    )
-                else:
-                    msg_lead = (
-                        f"¡Hola {nombre}! 👋 Un asesor de Torre Fuerte se pondrá en contacto "
-                        f"contigo muy pronto para continuar con tu consulta. 🏠✨"
-                    )
+                from agent.tools import cargar_info_negocio
+                _cfg_h = cargar_info_negocio()
+                _negocio_h = _cfg_h.get("negocio", {}).get("nombre_corto") or _cfg_h.get("negocio", {}).get("nombre", "")
+                _msgs_h = _cfg_h.get("mensajes", {}).get("handoff_automatico", {})
+                _tpl_h = _msgs_h.get("en" if idioma == "en" else "es", "")
+                msg_lead = _tpl_h.format(nombre=nombre, negocio=_negocio_h) if _tpl_h else (
+                    f"Hi {nombre}! 👋 An advisor will reach out to you shortly. 🏠✨"
+                    if idioma == "en" else
+                    f"¡Hola {nombre}! 👋 Un asesor se pondrá en contacto contigo muy pronto. 🏠✨"
+                )
 
                 if proveedor:
                     await proveedor.enviar_mensaje(telefono, msg_lead)
@@ -286,35 +263,26 @@ async def _tarea_recordatorios_visitas() -> None:
 
                 try:
                     from datetime import datetime as _dt
+                    from agent.tools import cargar_info_negocio
                     d = _dt.strptime(item["fecha"], "%Y-%m-%d")
+                    _cfg_r = cargar_info_negocio()
+                    _negocio_r = _cfg_r.get("negocio", {}).get("nombre_corto") or _cfg_r.get("negocio", {}).get("nombre", "")
+                    _msgs_r = _cfg_r.get("mensajes", {}).get("recordatorio_visita", {})
+                    lang_r = "en" if idioma == "en" else "es"
+                    tipo_key = "dia_antes" if tipo == "24h" else "una_hora"
+                    _tpl_r = _msgs_r.get(lang_r, {}).get(tipo_key, "")
                     if idioma == "en":
                         fecha_fmt = f"{_MESES_EN[d.month-1]} {d.day}, {d.year}"
-                        if tipo == "24h":
-                            msg = (
-                                f"Hi {nombre}! 👋 Reminder: tomorrow you have a visit to "
-                                f"Torre Fuerte Apartments:\n\n"
-                                f"📅 {fecha_fmt}\n⏰ {hora}\n\n"
-                                f"We look forward to seeing you! To reschedule, just reply here."
-                            )
-                        else:
-                            msg = (
-                                f"Hi {nombre}! ⏰ Your visit to Torre Fuerte Apartments "
-                                f"is in about 1 hour ({hora}). See you soon! 🏠✨"
-                            )
                     else:
                         fecha_fmt = f"{d.day} de {_MESES_ES[d.month-1]} de {d.year}"
-                        if tipo == "24h":
-                            msg = (
-                                f"Hola {nombre}! 👋 Te recordamos que mañana tienes una visita "
-                                f"al proyecto Torre Fuerte:\n\n"
-                                f"📅 {fecha_fmt}\n⏰ {hora}\n\n"
-                                f"¡Te esperamos! Si necesitas reprogramar, escríbenos aquí."
-                            )
-                        else:
-                            msg = (
-                                f"Hola {nombre}! ⏰ En aproximadamente 1 hora tienes tu visita "
-                                f"a Torre Fuerte ({hora}). ¡Nos vemos pronto! 🏠✨"
-                            )
+                    if _tpl_r:
+                        msg = _tpl_r.format(nombre=nombre, negocio=_negocio_r, fecha=fecha_fmt, hora=hora)
+                    elif idioma == "en":
+                        msg = (f"Hi {nombre}! Reminder: tomorrow you have a visit.\n\n📅 {fecha_fmt}\n⏰ {hora}"
+                               if tipo == "24h" else f"Hi {nombre}! Your visit is in about 1 hour ({hora}). See you soon!")
+                    else:
+                        msg = (f"¡Hola {nombre}! Mañana tienes una visita:\n\n📅 {fecha_fmt}\n⏰ {hora}\n\n¡Te esperamos!"
+                               if tipo == "24h" else f"¡Hola {nombre}! En 1 hora tienes tu visita ({hora}). ¡Nos vemos!")
                 except Exception as e:
                     logger.error(f"Error formateando recordatorio para visita {item['id']}: {e}")
                     continue
@@ -477,8 +445,12 @@ async def _procesar_mensaje_canal(msg, prov) -> None:
         if idioma is None:
             idioma = _detectar_idioma(msg.texto)
             await guardar_idioma(msg.telefono, idioma)
-        url_logo = f"{BASE_URL}/assets/TF-LOGO.jpg"
-        await prov.enviar_media(msg.telefono, url_logo)
+        from agent.tools import cargar_info_negocio as _cargarcfg
+        _logo_cfg = _cargarcfg().get("logo", {})
+        _logo_archivo = (_logo_cfg.get("archivo") if isinstance(_logo_cfg, dict) else _logo_cfg) or ""
+        if _logo_archivo:
+            url_logo = f"{BASE_URL}/knowledge/{_logo_archivo}"
+            await prov.enviar_media(msg.telefono, url_logo)
         logger.info("Logo enviado al inicio de conversación")
     elif idioma is None:
         idioma = _detectar_idioma(msg.texto)

@@ -1,6 +1,14 @@
-# Configuración del negocio — Generado por AgentKit
+# ============================================================
+# config/business.yaml — Configuración del negocio
+# ============================================================
+# Este archivo es la ÚNICA fuente de verdad para configurar
+# el agente. No hay que tocar código Python para adaptarlo
+# a un nuevo cliente — solo editar este archivo.
+# ============================================================
+
 negocio:
   nombre: "TORRE FUERTE APARTAMENTOS"
+  nombre_corto: "Torre Fuerte"        # Usado en emails, mensajes automáticos y subjects
   descripcion: >
     Torre Fuerte es un proyecto residencial de lujo ubicado en Laureles, Medellín,
     desarrollado por CUATRO ONCE y construido por Laureles 21. Es un edificio exclusivo
@@ -19,6 +27,223 @@ agente:
     - "Responder preguntas frecuentes"
     - "Agendar citas o visitas al proyecto"
 
+# ── Logo ─────────────────────────────────────────────────────
+# Archivo relativo a la carpeta knowledge/
+# Poner null para deshabilitar el envío del logo al inicio.
+logo:
+  archivo: "TF-LOGO.jpg"
+
+# ── Excel ────────────────────────────────────────────────────
+excel:
+  hoja_leads: "Leads Torre Fuerte"
+  hoja_visitas: "Visitas Torre Fuerte"
+
+# ── Planos ───────────────────────────────────────────────────
+# Mapeo de código de apartamento → archivo PDF
+# Todos los archivos son relativos a knowledge/planos/
+# Agregar aliases (ej: "todo" y "todos") según necesidad.
+planos:
+  "301": "301.pdf"
+  "302": "302.pdf"
+  "303": "303.pdf"
+  "401": "401.pdf"
+  "402": "402.pdf"
+  "501": "501.pdf"
+  "502": "502.pdf"
+  "601": "601.pdf"
+  "602": "602.pdf"
+  "603": "603.pdf"
+  "701": "701.pdf"
+  "702": "702.pdf"
+  "801": "801.pdf"
+  "802": "802.pdf"
+  "901": "901.pdf"
+  "902": "902.pdf"
+  "903": "903.pdf"
+  "1011": "1011.pdf"
+  "1012": "1012.pdf"
+  "ph1111": "PH1111.pdf"
+  "ph1112": "PH1112.pdf"
+  "1111": "PH1111.pdf"
+  "1112": "PH1112.pdf"
+  "todo": "torre-fuerte-Aptos-todo.pdf"
+  "todos": "torre-fuerte-Aptos-todo.pdf"
+
+# ── Renders ──────────────────────────────────────────────────
+# Lista de grupos de renders. Cada grupo tiene:
+#   claves: lista de códigos que activan este grupo
+#   carpeta: ruta relativa a knowledge/
+#   imagenes: lista de archivos de imagen dentro de la carpeta
+#   video: archivo de video dentro de la carpeta (null si no hay)
+renders:
+  - claves: ["401", "d401", "d-401"]
+    carpeta: "renders/render-401"
+    imagenes:
+      - "Renders-TF.jpg"
+      - "sala.jpg"
+      - "sala-comedor.jpg"
+      - "cocina.jpg"
+      - "bano.jpg"
+      - "hab1.jpg"
+      - "hab2.jpg"
+    video: "video-401.mp4"
+
+  - claves: ["penthouse", "penthouse1111", "ph1111", "1111", "ph-1111"]
+    carpeta: "renders/penthouse-1111"
+    imagenes:
+      - "PH 01.png"
+      - "PH 02.png"
+      - "PH 03.png"
+      - "PH 04.png"
+      - "PH 05.png"
+      - "PH 06.png"
+      - "PH 07.png"
+      - "PH 08.png"
+      - "PH 09.png"
+      - "PH 10.png"
+      - "PH 11.png"
+      - "PH 12.png"
+      - "PH 13.png"
+      - "PH 14.png"
+      - "PH 15.png"
+      - "PH 16.png"
+    video: null
+
+# ── Disponibilidad ───────────────────────────────────────────
+# Lista de unidades disponibles con sus características.
+# El agente usa estos datos para responder preguntas de precio y disponibilidad.
+disponibilidad:
+  - apto: "A-301"
+    nivel: 3
+    area: 100
+    hab: 2
+    precio: 1087000000
+  - apto: "B-302"
+    nivel: 3
+    area: 134.87
+    hab: 3
+    precio: 1448161000
+  - apto: "D-401"
+    nivel: 4
+    area: 119
+    hab: 3
+    precio: 1288200000
+  - apto: "E-402"
+    nivel: 4
+    area: 187.61
+    hab: 4
+    precio: 1994883000
+  - apto: "F-501"
+    nivel: 5
+    area: 114.24
+    hab: 3
+    precio: 1242672000
+  - apto: "G-502"
+    nivel: 5
+    area: 159.58
+    hab: 4
+    precio: 1744674000
+  - apto: "A'-601"
+    nivel: 6
+    area: 98.87
+    hab: 2
+    precio: 1087861000
+  - apto: "B'-602"
+    nivel: 6
+    area: 139.53
+    hab: 3
+    precio: 1541350000
+  - apto: "D-701"
+    nivel: 7
+    area: 119
+    hab: 3
+    precio: 1298700000
+  - apto: "E-702"
+    nivel: 7
+    area: 187.96
+    hab: 4
+    precio: 2043988000
+  - apto: "F-801"
+    nivel: 8
+    area: 114.24
+    hab: 3
+    precio: 1253172000
+  - apto: "G-802"
+    nivel: 8
+    area: 159.58
+    hab: 4
+    precio: 1755174000
+  - apto: "B-902"
+    nivel: 9
+    area: 134.72
+    hab: 3
+    precio: 1467616000
+  - apto: "D-1011"
+    nivel: 10
+    area: 119
+    hab: 3
+    precio: 1309200000
+  - apto: "E-1012"
+    nivel: 10
+    area: 187.61
+    hab: 4
+    precio: 2050883000
+  - apto: "PH-1111"
+    nivel: "11-12"
+    area: 247.06
+    hab: 4
+    precio: 3407898000
+  - apto: "PH-1112"
+    nivel: "11-12"
+    area: 301.24
+    hab: 4
+    precio: 4128492000
+
+# ── Mensajes automáticos ─────────────────────────────────────
+# Todos los mensajes que el agente envía automáticamente
+# (seguimiento, recordatorios, handoff).
+#
+# Placeholders disponibles:
+#   {nombre}  → nombre del lead
+#   {negocio} → nombre_corto del negocio
+#   {fecha}   → fecha formateada (solo recordatorios)
+#   {hora}    → hora de la visita (solo recordatorios)
+mensajes:
+
+  seguimiento:
+    es:
+      caliente:
+        - "¡Hola {nombre}! 👋 Solo quería hacer seguimiento a tu consulta sobre {negocio}. ¿Pudiste revisar la información que te compartí? Estoy aquí para resolver cualquier duda 🏠✨"
+        - "¡Hola {nombre}! 😊 Los apartamentos de {negocio} tienen disponibilidad limitada. ¿Te gustaría agendar una visita al proyecto o hablar con uno de nuestros asesores?"
+      tibio:
+        - "¡Hola {nombre}! 👋 Quería recordarte que en {negocio} seguimos disponibles para ayudarte. ¿Tienes alguna pregunta pendiente sobre el proyecto? 🏠"
+        - "¡Hola {nombre}! 😊 Este es nuestro último mensaje de seguimiento. Si decides retomar tu búsqueda, estaremos encantados de ayudarte. ¡Que tengas un excelente día!"
+      frio:
+        - "¡Hola {nombre}! 👋 Vimos que estuviste conociendo {negocio}. Si tienes alguna pregunta o quieres más información, con gusto te ayudamos 🏠"
+        - "¡Hola {nombre}! 😊 Este es nuestro último mensaje. Si en algún momento retomas tu búsqueda, {negocio} tiene opciones únicas esperándote. ¡Mucho éxito!"
+    en:
+      caliente:
+        - "Hi {nombre}! 👋 Just following up on your inquiry about {negocio}. Did you get a chance to review the information I shared? I'm here to answer any questions 🏠✨"
+        - "Hi {nombre}! 😊 Our units at {negocio} have limited availability. Would you like to schedule a visit or speak with one of our advisors?"
+      tibio:
+        - "Hi {nombre}! 👋 Just a reminder that we're here to help at {negocio}. Do you have any pending questions about the project? 🏠"
+        - "Hi {nombre}! 😊 This is our last follow-up message. If you ever decide to resume your search, we'd love to hear from you. Have a great day!"
+      frio:
+        - "Hi {nombre}! 👋 We noticed you were exploring {negocio}. If you have any questions or would like more information, we're happy to help 🏠"
+        - "Hi {nombre}! 😊 This is our last message. If you ever resume your search, {negocio} has unique options waiting for you. Best of luck!"
+
+  handoff_automatico:
+    es: "¡Hola {nombre}! 👋 Un asesor de {negocio} se pondrá en contacto contigo muy pronto para continuar con tu consulta. 🏠✨"
+    en: "Hi {nombre}! 👋 A {negocio} advisor will reach out to you shortly to continue with your inquiry. 🏠✨"
+
+  recordatorio_visita:
+    es:
+      dia_antes: "¡Hola {nombre}! 👋 Te recordamos que mañana tienes una visita al proyecto {negocio}:\n\n📅 {fecha}\n⏰ {hora}\n\n¡Te esperamos! Si necesitas reprogramar, escríbenos aquí."
+      una_hora: "¡Hola {nombre}! ⏰ En aproximadamente 1 hora tienes tu visita a {negocio} ({hora}). ¡Nos vemos pronto! 🏠✨"
+    en:
+      dia_antes: "Hi {nombre}! 👋 Reminder: tomorrow you have a visit to {negocio}:\n\n📅 {fecha}\n⏰ {hora}\n\nWe look forward to seeing you! To reschedule, just reply here."
+      una_hora: "Hi {nombre}! ⏰ Your visit to {negocio} is in about 1 hour ({hora}). See you soon! 🏠✨"
+
 metadata:
   creado: "2026-05-12"
-  version: "1.0"
+  version: "2.0"
