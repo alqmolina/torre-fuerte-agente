@@ -32,6 +32,11 @@ class ProveedorWhatsApp(ABC):
         """Envía un archivo (PDF, imagen) via URL pública. Retorna True si fue exitoso."""
         return False
 
+    async def enviar_imagen_local(self, telefono: str, ruta_archivo: str, caption: str = "") -> bool:
+        """Envía una imagen leyendo el archivo del filesystem local.
+        Por defecto no implementado (retorna False). Cada proveedor puede sobreescribir."""
+        return False
+
     async def validar_webhook(self, request: Request) -> dict | int | None:
         """Verificación GET del webhook (solo Meta la requiere). Retorna respuesta o None."""
         return None

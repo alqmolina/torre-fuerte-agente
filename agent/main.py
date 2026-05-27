@@ -449,14 +449,14 @@ async def _procesar_mensaje_canal(msg, prov) -> None:
         _logo_cfg = _cargarcfg().get("logo", {})
         _logo_archivo = (_logo_cfg.get("archivo") if isinstance(_logo_cfg, dict) else _logo_cfg) or ""
         if _logo_archivo:
-            url_logo = f"{BASE_URL}/assets/{_logo_archivo}"
-            logger.info(f"Enviando logo al inicio: {url_logo}")
+            ruta_logo = f"knowledge/{_logo_archivo}"
+            logger.info(f"Enviando logo al inicio: {ruta_logo}")
             try:
-                ok = await prov.enviar_media(msg.telefono, url_logo)
+                ok = await prov.enviar_imagen_local(msg.telefono, ruta_logo)
                 if ok:
                     logger.info("Logo enviado correctamente")
                 else:
-                    logger.warning(f"enviar_media retornó False para logo: {url_logo}")
+                    logger.warning(f"enviar_imagen_local retornó False para logo: {ruta_logo}")
             except Exception as e:
                 logger.error(f"Excepción enviando logo: {e}")
         else:
