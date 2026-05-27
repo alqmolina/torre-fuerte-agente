@@ -1560,8 +1560,8 @@ async def admin_visitas(request: Request):
     _nh = _nav_html(
         "Torre Fuerte · Visitas", "Próximas visitas al proyecto",
         extra=(
-            '<a href="/admin/visitas/nueva" class="nav-green">➕ Nueva</a>'
-            ' <a href="/admin/visitas/export" class="nav-glass">📥 Reporte</a>'
+            '<a href="/admin/visitas/export" class="nav-glass">📥 Reporte</a>'
+            ' <a href="/admin/visitas/nueva" class="nav-green">➕ Nueva</a>'
         ),
     )
     _nsc = _nav_script()
