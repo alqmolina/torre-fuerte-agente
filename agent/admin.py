@@ -2577,6 +2577,23 @@ async def admin_eliminar_lead(telefono: str, request: Request):
 
 # ── Pipeline / Kanban ─────────────────────────────────────────────────────────
 
+@router.post("/leads/eliminar-lote")
+async def eliminar_lote(request: Request):
+    """Elimina múltiples leads por lista de teléfonos (JSON)."""
+    if not _autenticado(request):
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
+    body = await request.json()
+    telefonos = body.get("telefonos", [])
+    eliminados = 0
+    for tel in telefonos:
+        try:
+            await eliminar_lead_completo(tel)
+            eliminados += 1
+        except Exception as e:
+            logger.error(f"Error eliminando lead {tel}: {e}")
+    return JSONResponse({"ok": True, "eliminados": eliminados})
+
+
 @router.get("/pipeline/data")
 async def pipeline_data(request: Request):
     """Endpoint JSON para obtener los datos del pipeline (para auto-refresh)."""
@@ -2607,6 +2624,24 @@ async def admin_pipeline(request: Request):
         count = len(leads)
         badge = f'<span class="col-badge badge-{grupo_key}">{count}</span>'
 
+        select_controls = (
+            f'<div class="col-select-wrap">'
+            f'<label class="lbl-todos">'
+            f'<input type="checkbox" class="check-all" data-col="{grupo_key}" onchange="toggleSelectAll(this)"> Todos'
+            f'</label>'
+            f'<button class="btn-lote" id="btn-lote-{grupo_key}" style="display:none" onclick="eliminarLote(\'{grupo_key}\')">'
+            f'🗑️ Eliminar (<span id="count-{grupo_key}">0</span>)'
+            f'</button>'
+            f'</div>'
+        ) if leads else ''
+
+        col_header = (
+            f'<div class="col-header">'
+            f'<div style="display:flex;align-items:center;gap:6px"><span>{icono} {label}</span>{badge}</div>'
+            f'{select_controls}'
+            f'</div>'
+        )
+
         if not leads:
             empty = (
                 f'<div class="empty-col">'
@@ -2614,7 +2649,7 @@ async def admin_pipeline(request: Request):
                 f'<p>Sin leads en esta etapa</p>'
                 f'</div>'
             )
-            return f'<div class="kanban-col" id="col-{grupo_key}"><div class="col-header"><span>{icono} {label}</span>{badge}</div>{empty}</div>'
+            return f'<div class="kanban-col" id="col-{grupo_key}">{col_header}{empty}</div>'
 
         cards_html = ""
         for lead in leads:
@@ -2641,6 +2676,7 @@ async def admin_pipeline(request: Request):
             cards_html += f"""
             <div class="lead-card {temp}">
               <div class="card-top">
+                <input type="checkbox" class="lead-check" data-tel="{tel_esc}" data-col="{grupo_key}" onchange="onCheckChange(this)">
                 <span class="lead-nombre">{nombre_esc}</span>
                 <span class="badge badge-{temp}">{icono} {_esc(lead['temperatura'] or temp).upper()}</span>
               </div>
@@ -2662,7 +2698,7 @@ async def admin_pipeline(request: Request):
               </div>
             </div>"""
 
-        return f'<div class="kanban-col" id="col-{grupo_key}"><div class="col-header"><span>{icono} {label}</span>{badge}</div>{cards_html}</div>'
+        return f'<div class="kanban-col" id="col-{grupo_key}">{col_header}{cards_html}</div>'
 
     col_caliente = _render_columna("caliente", "🔥", "CALIENTE")
     col_tibio = _render_columna("tibio", "🌡️", "TIBIO")
@@ -2733,6 +2769,12 @@ async def admin_pipeline(request: Request):
     .badge-handoff {{ background: #fde8e8; color: #c0392b; font-size: 11px; padding: 4px 10px; border-radius: 6px; font-weight: 600; }}
     .btn-eliminar-pipeline {{ background: transparent; color: #bbb; border: 1px solid #e0e0e0; padding: 5px 8px; border-radius: 6px; font-size: 13px; cursor: pointer; line-height: 1; }}
     .btn-eliminar-pipeline:hover {{ background: #fde8e8; color: #c0392b; border-color: #e74c3c; }}
+    .col-select-wrap {{ display: flex; align-items: center; gap: 8px; margin-top: 6px; padding-top: 6px; border-top: 1px solid #d8dfe8; }}
+    .lbl-todos {{ font-size: 12px; color: #666; display: flex; align-items: center; gap: 4px; cursor: pointer; font-weight: 500; }}
+    .lbl-todos input {{ cursor: pointer; accent-color: #1a3c5e; }}
+    .btn-lote {{ background: #e74c3c; color: white; border: none; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }}
+    .btn-lote:hover {{ background: #c0392b; }}
+    .lead-check {{ cursor: pointer; accent-color: #1a3c5e; flex-shrink: 0; width: 15px; height: 15px; }}
 
     .empty-col {{ text-align: center; padding: 32px 16px; color: #aaa; font-size: 13px; }}
 
@@ -2817,9 +2859,9 @@ async def admin_pipeline(request: Request):
       return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }}
 
-    function _renderCard(lead) {{
-      const temp = (lead.temperatura || '').toLowerCase().trim();
-      const tempKey = (temp === 'frío' || temp === 'frio') ? 'frio' : (temp === 'tibio' ? 'tibio' : (temp === 'caliente' ? 'caliente' : 'frio'));
+    function _renderCard(lead, col) {{
+      const temp = (lead.temperatura || '').toLowerCase().replace('í','i').trim();
+      const tempKey = col || (temp === 'caliente' ? 'caliente' : temp === 'tibio' ? 'tibio' : 'frio');
       const tel = _esc(lead.telefono);
       const nombre = _esc(lead.nombre || 'Sin nombre');
       const apto = _esc(lead.apto) || 'Apto no especificado';
@@ -2840,6 +2882,7 @@ async def admin_pipeline(request: Request):
       </form>`;
       return `<div class="lead-card ${{tempKey}}">
         <div class="card-top">
+          <input type="checkbox" class="lead-check" data-tel="${{tel}}" data-col="${{tempKey}}" onchange="onCheckChange(this)">
           <span class="lead-nombre">${{nombre}}</span>
           ${{_badge(tempKey)}}
         </div>
@@ -2860,14 +2903,26 @@ async def admin_pipeline(request: Request):
     function _renderCol(key, icono, label, leads) {{
       const count = leads.length;
       const badge = `<span class="col-badge badge-${{key}}">${{count}}</span>`;
+      const selectControls = leads.length ? `
+        <div class="col-select-wrap">
+          <label class="lbl-todos">
+            <input type="checkbox" class="check-all" data-col="${{key}}" onchange="toggleSelectAll(this)"> Todos
+          </label>
+          <button class="btn-lote" id="btn-lote-${{key}}" style="display:none" onclick="eliminarLote('${{key}}')">
+            🗑️ Eliminar (<span id="count-${{key}}">0</span>)
+          </button>
+        </div>` : '';
       let cardsHtml = '';
       if (!leads.length) {{
         cardsHtml = `<div class="empty-col"><div style="font-size:32px;margin-bottom:8px">${{icono}}</div><p>Sin leads en esta etapa</p></div>`;
       }} else {{
-        leads.forEach(l => {{ cardsHtml += _renderCard(l); }});
+        leads.forEach(l => {{ cardsHtml += _renderCard(l, key); }});
       }}
       return `<div class="kanban-col" id="col-${{key}}">
-        <div class="col-header"><span>${{icono}} ${{label}}</span>${{badge}}</div>
+        <div class="col-header">
+          <div style="display:flex;align-items:center;gap:6px"><span>${{icono}} ${{label}}</span>${{badge}}</div>
+          ${{selectControls}}
+        </div>
         ${{cardsHtml}}
       </div>`;
     }}
@@ -2887,6 +2942,54 @@ async def admin_pipeline(request: Request):
           'Actualizado ahora · próxima actualización en <span id="countdown">30</span>s';
       }} catch(e) {{
         console.error('Error actualizando pipeline:', e);
+      }}
+    }}
+
+    /* ─── Selección múltiple ────────────────────────────────────── */
+    function _updateBtnLote(col) {{
+      const checks = document.querySelectorAll(`.lead-check[data-col="${{col}}"]:checked`);
+      const btn = document.getElementById(`btn-lote-${{col}}`);
+      const countEl = document.getElementById(`count-${{col}}`);
+      if (!btn) return;
+      if (checks.length > 0) {{
+        btn.style.display = 'inline-block';
+        if (countEl) countEl.textContent = checks.length;
+      }} else {{
+        btn.style.display = 'none';
+      }}
+    }}
+
+    function toggleSelectAll(checkbox) {{
+      const col = checkbox.dataset.col;
+      document.querySelectorAll(`.lead-check[data-col="${{col}}"]`)
+        .forEach(c => {{ c.checked = checkbox.checked; }});
+      _updateBtnLote(col);
+    }}
+
+    function onCheckChange(checkbox) {{
+      const col = checkbox.dataset.col;
+      // Sincronizar "Todos" si todos están marcados/desmarcados
+      const all = document.querySelectorAll(`.lead-check[data-col="${{col}}"]`);
+      const checked = document.querySelectorAll(`.lead-check[data-col="${{col}}"]:checked`);
+      const checkAll = document.querySelector(`.check-all[data-col="${{col}}"]`);
+      if (checkAll) checkAll.checked = all.length === checked.length;
+      _updateBtnLote(col);
+    }}
+
+    async function eliminarLote(col) {{
+      const checks = document.querySelectorAll(`.lead-check[data-col="${{col}}"]:checked`);
+      const telefonos = [...checks].map(c => c.dataset.tel);
+      if (!telefonos.length) return;
+      if (!confirm(`¿Eliminar ${{telefonos.length}} lead(s) seleccionado(s)? Esta acción no se puede deshacer.`)) return;
+      try {{
+        const r = await fetch('/admin/leads/eliminar-lote', {{
+          method: 'POST',
+          headers: {{'Content-Type': 'application/json'}},
+          body: JSON.stringify({{telefonos}})
+        }});
+        if (r.ok) await actualizarPipeline();
+      }} catch(e) {{
+        alert('Error al eliminar. Intenta de nuevo.');
       }}
     }}
 
