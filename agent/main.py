@@ -385,6 +385,38 @@ async def debug():
     }
 
 
+@app.post("/debug/logo/{telefono}")
+async def debug_enviar_logo(telefono: str):
+    """Fuerza el envío del logo al número indicado — sirve para probar el mecanismo."""
+    from agent.tools import cargar_info_negocio as _cfg_logo
+    cfg = _cfg_logo()
+    logo_cfg = cfg.get("logo", {})
+    logo_archivo = (logo_cfg.get("archivo") if isinstance(logo_cfg, dict) else logo_cfg) or ""
+    if not logo_archivo:
+        return {"ok": False, "error": "Logo no configurado en business.yaml"}
+    ruta = f"knowledge/{logo_archivo}"
+    existe = os.path.exists(ruta)
+    if not existe:
+        return {"ok": False, "error": f"Archivo no encontrado: {ruta}"}
+    ok = await proveedor.enviar_imagen_local(telefono, ruta)
+    historial = await obtener_historial(telefono)
+    return {
+        "ok": ok,
+        "ruta": ruta,
+        "existe": existe,
+        "historial_len": len(historial),
+        "telefono": telefono,
+    }
+
+
+@app.delete("/debug/historial/{telefono}")
+async def debug_reset_historial(telefono: str):
+    """Borra el historial de un número para forzar historial==0 en el próximo mensaje."""
+    from agent.memory import limpiar_historial
+    await limpiar_historial(telefono)
+    return {"ok": True, "telefono": telefono, "historial": "borrado"}
+
+
 @app.delete("/handoff/{telefono}")
 async def reset_handoff(telefono: str):
     """Desactiva el handoff de un lead — el asesor ya terminó de atenderlo."""
