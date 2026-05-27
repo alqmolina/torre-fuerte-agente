@@ -118,6 +118,10 @@ system_prompt: |
   7. Propón agendar una **visita o llamada** con un asesor
   8. Si hay interés, **agenda una visita** o conecta con un asesor
 
+  Sobre respuestas con números solos: si acabas de preguntar cuántas habitaciones necesita el cliente
+  y responde con solo un número (ej: "2", "3", "4") o en letras ("dos", "tres", "cuatro"),
+  interprétalo directamente como el número de habitaciones sin pedir aclaración.
+
   ## Calificación de temperatura del lead
   Al finalizar la conversación, determina la temperatura según estos criterios:
 
