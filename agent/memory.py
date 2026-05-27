@@ -1232,6 +1232,82 @@ async def registrar_broadcast_log(broadcast_id: int, telefono: str, nombre: str,
         await session.commit()
 
 
+async def obtener_pipeline_data() -> dict:
+    """Retorna todos los leads agrupados por temperatura con datos para el pipeline/kanban."""
+    from datetime import timezone
+
+    now_utc = datetime.utcnow()
+
+    async with async_session() as session:
+        result = await session.execute(select(Lead).order_by(Lead.fecha.desc()))
+        todos_los_leads = result.scalars().all()
+
+        grupos: dict[str, list[dict]] = {"caliente": [], "tibio": [], "frio": []}
+
+        for lead in todos_los_leads:
+            temp_raw = (lead.temperatura or "").lower().strip()
+            # Normalizar frío/frio
+            if temp_raw in ("frío", "frio"):
+                grupo_key = "frio"
+            elif temp_raw == "tibio":
+                grupo_key = "tibio"
+            elif temp_raw == "caliente":
+                grupo_key = "caliente"
+            else:
+                grupo_key = "frio"  # leads sin temperatura van a frío
+
+            # Último mensaje
+            last_msg_result = await session.execute(
+                select(Mensaje)
+                .where(Mensaje.telefono == lead.telefono)
+                .order_by(Mensaje.timestamp.desc())
+                .limit(1)
+            )
+            last_msg = last_msg_result.scalar_one_or_none()
+
+            # Estado handoff
+            h_result = await session.execute(
+                select(Handoff).where(Handoff.telefono == lead.telefono, Handoff.activo == True)
+            )
+            en_handoff = h_result.scalar_one_or_none() is not None
+
+            # Calcular "último chat" formateado
+            if last_msg:
+                ultimo_chat = _col(last_msg.timestamp)
+                ultimo_mensaje = last_msg.content[:80]
+                ultimo_mensaje_role = last_msg.role
+                # Tiempo desde último mensaje para ordenar
+                ultimo_ts = last_msg.timestamp
+            else:
+                ultimo_chat = ""
+                ultimo_mensaje = ""
+                ultimo_mensaje_role = ""
+                ultimo_ts = lead.fecha or datetime.min
+
+            grupos[grupo_key].append({
+                "telefono": lead.telefono,
+                "nombre": lead.nombre or "Sin nombre",
+                "apto": lead.apto or "",
+                "habitaciones": lead.habitaciones or "",
+                "temperatura": lead.temperatura or grupo_key,
+                "intencion": lead.intencion or "",
+                "en_handoff": en_handoff,
+                "ultimo_mensaje": ultimo_mensaje,
+                "ultimo_mensaje_role": ultimo_mensaje_role,
+                "ultimo_chat": ultimo_chat,
+                "_ultimo_ts": ultimo_ts.isoformat() if ultimo_ts else "",
+            })
+
+        # Ordenar cada grupo por actividad más reciente primero
+        for key in grupos:
+            grupos[key].sort(key=lambda x: x.get("_ultimo_ts", ""), reverse=True)
+            # Eliminar campo auxiliar de ordenamiento
+            for item in grupos[key]:
+                item.pop("_ultimo_ts", None)
+
+        return grupos
+
+
 async def obtener_historial_broadcasts() -> list[dict]:
     async with async_session() as session:
         result = await session.execute(

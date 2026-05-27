@@ -23,6 +23,7 @@ from agent.memory import (
     obtener_perfil_lead,
     guardar_mensaje,
     desactivar_handoff,
+    activar_handoff,
     limpiar_historial,
     obtener_metricas,
     obtener_leads_filtrados,
@@ -50,6 +51,7 @@ from agent.memory import (
     obtener_idioma,
     buscar_leads,
     obtener_actividad_lead,
+    obtener_pipeline_data,
     Handoff,
     async_session,
 )
@@ -344,6 +346,7 @@ async def admin_index(request: Request):
       </button>
       <div class="dropdown" id="dropdown">
         <a href="/admin/buscar">🔍 Buscar leads</a>
+        <a href="/admin/pipeline">📋 Pipeline</a>
         <a href="/admin/visitas">📅 Visitas</a>
         <a href="/admin/broadcast">📢 Broadcast</a>
         <a href="/admin/dashboard">📊 Métricas</a>
@@ -2570,3 +2573,321 @@ async def admin_eliminar_lead(telefono: str, request: Request):
     except Exception as e:
         logger.error(f"Error eliminando lead {telefono}: {e}")
     return RedirectResponse("/admin/buscar", status_code=303)
+
+
+# ── Pipeline / Kanban ─────────────────────────────────────────────────────────
+
+@router.get("/pipeline/data")
+async def pipeline_data(request: Request):
+    """Endpoint JSON para obtener los datos del pipeline (para auto-refresh)."""
+    if not _autenticado(request):
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
+    data = await obtener_pipeline_data()
+    return JSONResponse(data)
+
+
+@router.post("/intervenir/{telefono}")
+async def intervenir(telefono: str, request: Request):
+    """Activa handoff manual para un lead desde el pipeline."""
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
+    await activar_handoff(telefono, razon="Intervención manual del asesor")
+    return RedirectResponse(f"/admin/chat/{telefono}", status_code=303)
+
+
+@router.get("/pipeline", response_class=HTMLResponse)
+async def admin_pipeline(request: Request):
+    if not _autenticado(request):
+        return RedirectResponse("/admin/login", status_code=302)
+
+    data = await obtener_pipeline_data()
+
+    def _render_columna(grupo_key: str, icono: str, label: str) -> str:
+        leads = data.get(grupo_key, [])
+        count = len(leads)
+        badge = f'<span class="col-badge badge-{grupo_key}">{count}</span>'
+
+        if not leads:
+            empty = (
+                f'<div class="empty-col">'
+                f'<div style="font-size:32px;margin-bottom:8px">{icono}</div>'
+                f'<p>Sin leads en esta etapa</p>'
+                f'</div>'
+            )
+            return f'<div class="kanban-col" id="col-{grupo_key}"><div class="col-header"><span>{icono} {label}</span>{badge}</div>{empty}</div>'
+
+        cards_html = ""
+        for lead in leads:
+            tel = lead["telefono"]
+            tel_esc = _esc(tel)
+            nombre_esc = _esc(lead["nombre"])
+            apto_esc = _esc(lead["apto"]) if lead["apto"] else "Apto no especificado"
+            hab_esc = _esc(lead["habitaciones"]) if lead["habitaciones"] else ""
+            temp = grupo_key
+            ultimo_esc = _esc(lead["ultimo_mensaje"]) if lead["ultimo_mensaje"] else "<em style='color:#bbb'>Sin mensajes</em>"
+            role_label = "Bot:" if lead["ultimo_mensaje_role"] == "assistant" else ("Lead:" if lead["ultimo_mensaje_role"] == "user" else "")
+            tiempo_esc = _esc(lead["ultimo_chat"]) if lead["ultimo_chat"] else "—"
+
+            if lead["en_handoff"]:
+                accion_html = '<div class="badge-handoff">🔴 En atención</div>'
+            else:
+                accion_html = (
+                    f'<form method="post" action="/admin/intervenir/{tel_esc}" style="margin:0;display:inline">'
+                    f'<button type="submit" class="btn-intervenir" '
+                    f'onclick="return confirm(\'¿Intervenir en esta conversación?\')">🚀 Intervenir</button>'
+                    f'</form>'
+                )
+
+            cards_html += f"""
+            <div class="lead-card {temp}">
+              <div class="card-top">
+                <span class="lead-nombre">{nombre_esc}</span>
+                <span class="badge badge-{temp}">{icono} {_esc(lead['temperatura'] or temp).upper()}</span>
+              </div>
+              <div class="card-tel">📱 {tel_esc}</div>
+              <div class="card-msg">
+                {f'<span class="role-lbl">{role_label}</span> ' if role_label else ''}{ultimo_esc}
+              </div>
+              <div class="card-meta">
+                <span>🕐 {tiempo_esc}</span>
+                <span>🏠 {apto_esc}{(' · ' + hab_esc + ' hab') if hab_esc else ''}</span>
+              </div>
+              <div class="card-actions">
+                <a href="/admin/chat/{tel_esc}" class="btn-chat">💬 Chat</a>
+                {accion_html}
+              </div>
+            </div>"""
+
+        return f'<div class="kanban-col" id="col-{grupo_key}"><div class="col-header"><span>{icono} {label}</span>{badge}</div>{cards_html}</div>'
+
+    col_caliente = _render_columna("caliente", "🔥", "CALIENTE")
+    col_tibio = _render_columna("tibio", "🌡️", "TIBIO")
+    col_frio = _render_columna("frio", "❄️", "FRÍO")
+
+    total_leads = sum(len(data.get(k, [])) for k in ("caliente", "tibio", "frio"))
+
+    return f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Torre Fuerte — Pipeline</title>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; min-height: 100vh; }}
+
+    /* Header — igual al resto del admin */
+    .header {{ background: #1a3c5e; color: white; padding: 12px 16px; display: flex; align-items: center; gap: 10px; position: relative; }}
+    .header-title {{ flex: 1; min-width: 0; }}
+    .header-title .title {{ font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+    .header-title .sub {{ font-size: 12px; opacity: 0.7; margin-top: 1px; }}
+    .btn-lead {{ color: white; background: #27ae60; font-weight: 600; font-size: 13px; padding: 6px 12px; border-radius: 6px; text-decoration: none; white-space: nowrap; }}
+    .btn-lead:hover {{ background: #219a52; }}
+    .btn-logout {{ color: rgba(255,255,255,0.6); font-size: 12px; text-decoration: none; white-space: nowrap; }}
+    .btn-logout:hover {{ color: white; }}
+    .menu-wrap {{ position: relative; }}
+    .menu-btn {{ background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.25); padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; white-space: nowrap; display: flex; align-items: center; gap: 6px; }}
+    .menu-btn:hover {{ background: rgba(255,255,255,0.25); }}
+    .menu-btn .arrow {{ font-size: 10px; transition: transform 0.15s; }}
+    .menu-btn.open .arrow {{ transform: rotate(180deg); }}
+    .dropdown {{ display: none; position: absolute; top: calc(100% + 6px); right: 0; background: white; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.18); min-width: 180px; overflow: hidden; z-index: 999; }}
+    .dropdown.show {{ display: block; }}
+    .dropdown a {{ display: flex; align-items: center; gap: 10px; padding: 12px 16px; font-size: 14px; color: #1a3c5e; text-decoration: none; font-weight: 500; }}
+    .dropdown a:hover {{ background: #f0f4f8; }}
+    .dropdown a + a {{ border-top: 1px solid #f0f4f8; }}
+
+    /* Kanban board */
+    .kanban-container {{ padding: 16px; overflow-x: auto; }}
+    .kanban-board {{ display: flex; gap: 14px; align-items: flex-start; min-width: 600px; }}
+    .kanban-col {{ flex: 1; min-width: 260px; max-width: 380px; background: #e8edf2; border-radius: 12px; padding: 10px 10px 14px; }}
+    .col-header {{ display: flex; justify-content: space-between; align-items: center; padding: 8px 4px 12px; font-size: 13px; font-weight: 700; color: #1a3c5e; text-transform: uppercase; letter-spacing: 0.5px; }}
+    .col-badge {{ border-radius: 12px; padding: 2px 9px; font-size: 12px; font-weight: 700; }}
+    .badge-caliente {{ background: #fde8e8; color: #c0392b; }}
+    .badge-tibio {{ background: #fef3cd; color: #d68910; }}
+    .badge-frio {{ background: #dbeafe; color: #1a56db; }}
+
+    /* Lead card */
+    .lead-card {{ background: white; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); border-left: 4px solid #ccc; transition: box-shadow 0.15s; }}
+    .lead-card:hover {{ box-shadow: 0 3px 10px rgba(0,0,0,0.12); }}
+    .lead-card.caliente {{ border-left-color: #e74c3c; }}
+    .lead-card.tibio {{ border-left-color: #f39c12; }}
+    .lead-card.frio {{ border-left-color: #3498db; }}
+
+    .card-top {{ display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; margin-bottom: 5px; }}
+    .lead-nombre {{ font-weight: 700; font-size: 14px; color: #1a3c5e; line-height: 1.3; }}
+    .badge {{ font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; white-space: nowrap; flex-shrink: 0; }}
+
+    .card-tel {{ font-size: 12px; color: #888; margin-bottom: 6px; }}
+    .card-msg {{ font-size: 13px; color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 5px; line-height: 1.4; }}
+    .role-lbl {{ font-size: 11px; color: #999; font-weight: 600; }}
+    .card-meta {{ font-size: 11px; color: #aaa; display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }}
+    .card-actions {{ display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }}
+    .btn-chat {{ background: #1a3c5e; color: white; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; text-decoration: none; white-space: nowrap; }}
+    .btn-chat:hover {{ background: #15304e; }}
+    .btn-intervenir {{ background: #e67e22; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }}
+    .btn-intervenir:hover {{ background: #d35400; }}
+    .badge-handoff {{ background: #fde8e8; color: #c0392b; font-size: 11px; padding: 4px 10px; border-radius: 6px; font-weight: 600; }}
+
+    .empty-col {{ text-align: center; padding: 32px 16px; color: #aaa; font-size: 13px; }}
+
+    /* Footer */
+    .pipeline-footer {{ text-align: center; font-size: 12px; color: #bbb; padding: 16px; }}
+
+    /* Responsive: columnas apiladas en móvil */
+    @media (max-width: 768px) {{
+      .kanban-board {{ flex-direction: column; min-width: unset; }}
+      .kanban-col {{ max-width: 100%; min-width: unset; }}
+      .kanban-container {{ padding: 12px; }}
+    }}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-title">
+      <div class="title">Torre Fuerte · Pipeline</div>
+      <div class="sub">{total_leads} leads en pipeline</div>
+    </div>
+    <a href="/admin/leads/nuevo" class="btn-lead">➕ Lead</a>
+    <div class="menu-wrap">
+      <button class="menu-btn" id="menuBtn" onclick="toggleMenu(event)">
+        ☰ Menú <span class="arrow">▼</span>
+      </button>
+      <div class="dropdown" id="dropdown">
+        <a href="/admin/buscar">🔍 Buscar leads</a>
+        <a href="/admin/pipeline">📋 Pipeline</a>
+        <a href="/admin/visitas">📅 Visitas</a>
+        <a href="/admin/broadcast">📢 Broadcast</a>
+        <a href="/admin/dashboard">📊 Métricas</a>
+      </div>
+    </div>
+    <a href="/admin/logout" class="btn-logout">Salir</a>
+  </div>
+
+  <div class="kanban-container">
+    <div class="kanban-board" id="kanbanBoard">
+      {col_caliente}
+      {col_tibio}
+      {col_frio}
+    </div>
+  </div>
+
+  <div class="pipeline-footer" id="footer">
+    Actualizado ahora · próxima actualización en <span id="countdown">30</span>s
+  </div>
+
+  <script>
+    /* ─── Dropdown ──────────────────────────────────────────────────── */
+    function toggleMenu(e) {{
+      e.stopPropagation();
+      const btn = document.getElementById('menuBtn');
+      const dd = document.getElementById('dropdown');
+      btn.classList.toggle('open');
+      dd.classList.toggle('show');
+    }}
+    document.addEventListener('click', () => {{
+      document.getElementById('menuBtn').classList.remove('open');
+      document.getElementById('dropdown').classList.remove('show');
+    }});
+
+    /* ─── Auto-refresh cada 30s ─────────────────────────────────────── */
+    let segsDesde = 0;
+    const INTERVALO = 30;
+
+    function _badge(temp) {{
+      const map = {{
+        caliente: '<span class="badge badge-caliente">🔥 CALIENTE</span>',
+        tibio:    '<span class="badge badge-tibio">🌡️ TIBIO</span>',
+        frio:     '<span class="badge badge-frio">❄️ FRÍO</span>',
+      }};
+      return map[temp] || '';
+    }}
+
+    function _icono(temp) {{
+      return {{ caliente: '🔥', tibio: '🌡️', frio: '❄️' }}[temp] || '';
+    }}
+
+    function _esc(s) {{
+      if (!s) return '';
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }}
+
+    function _renderCard(lead) {{
+      const temp = (lead.temperatura || '').toLowerCase().trim();
+      const tempKey = (temp === 'frío' || temp === 'frio') ? 'frio' : (temp === 'tibio' ? 'tibio' : (temp === 'caliente' ? 'caliente' : 'frio'));
+      const tel = _esc(lead.telefono);
+      const nombre = _esc(lead.nombre || 'Sin nombre');
+      const apto = _esc(lead.apto) || 'Apto no especificado';
+      const hab = lead.habitaciones ? (' · ' + _esc(lead.habitaciones) + ' hab') : '';
+      const roleLabel = lead.ultimo_mensaje_role === 'assistant' ? 'Bot:' : (lead.ultimo_mensaje_role === 'user' ? 'Lead:' : '');
+      const msgPreview = lead.ultimo_mensaje ? _esc(lead.ultimo_mensaje) : '<em style="color:#bbb">Sin mensajes</em>';
+      const tiempo = lead.ultimo_chat ? _esc(lead.ultimo_chat) : '—';
+
+      const accionHtml = lead.en_handoff
+        ? '<div class="badge-handoff">🔴 En atención</div>'
+        : `<form method="post" action="/admin/intervenir/${{tel}}" style="margin:0;display:inline">
+             <button type="submit" class="btn-intervenir" onclick="return confirm('¿Intervenir en esta conversación?')">🚀 Intervenir</button>
+           </form>`;
+
+      return `<div class="lead-card ${{tempKey}}">
+        <div class="card-top">
+          <span class="lead-nombre">${{nombre}}</span>
+          ${{_badge(tempKey)}}
+        </div>
+        <div class="card-tel">📱 ${{tel}}</div>
+        <div class="card-msg">${{roleLabel ? '<span class="role-lbl">' + roleLabel + '</span> ' : ''}}${{msgPreview}}</div>
+        <div class="card-meta">
+          <span>🕐 ${{tiempo}}</span>
+          <span>🏠 ${{apto}}${{hab}}</span>
+        </div>
+        <div class="card-actions">
+          <a href="/admin/chat/${{tel}}" class="btn-chat">💬 Chat</a>
+          ${{accionHtml}}
+        </div>
+      </div>`;
+    }}
+
+    function _renderCol(key, icono, label, leads) {{
+      const count = leads.length;
+      const badge = `<span class="col-badge badge-${{key}}">${{count}}</span>`;
+      let cardsHtml = '';
+      if (!leads.length) {{
+        cardsHtml = `<div class="empty-col"><div style="font-size:32px;margin-bottom:8px">${{icono}}</div><p>Sin leads en esta etapa</p></div>`;
+      }} else {{
+        leads.forEach(l => {{ cardsHtml += _renderCard(l); }});
+      }}
+      return `<div class="kanban-col" id="col-${{key}}">
+        <div class="col-header"><span>${{icono}} ${{label}}</span>${{badge}}</div>
+        ${{cardsHtml}}
+      </div>`;
+    }}
+
+    async function actualizarPipeline() {{
+      try {{
+        const r = await fetch('/admin/pipeline/data');
+        if (!r.ok) return;
+        const data = await r.json();
+        const board = document.getElementById('kanbanBoard');
+        board.innerHTML =
+          _renderCol('caliente', '🔥', 'CALIENTE', data.caliente || []) +
+          _renderCol('tibio',    '🌡️', 'TIBIO',    data.tibio    || []) +
+          _renderCol('frio',     '❄️', 'FRÍO',     data.frio     || []);
+        segsDesde = 0;
+        document.getElementById('footer').innerHTML =
+          'Actualizado ahora · próxima actualización en <span id="countdown">30</span>s';
+      }} catch(e) {{
+        console.error('Error actualizando pipeline:', e);
+      }}
+    }}
+
+    // Contador de countdown
+    setInterval(() => {{
+      segsDesde++;
+      const el = document.getElementById('countdown');
+      if (el) el.textContent = Math.max(0, INTERVALO - segsDesde);
+      if (segsDesde >= INTERVALO) {{
+        actualizarPipeline();
+      }}
+    }}, 1000);
+  </script>
+</body>
+</html>"""
