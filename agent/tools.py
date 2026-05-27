@@ -7,6 +7,7 @@ import yaml
 import logging
 import httpx
 from datetime import datetime, timedelta
+from urllib.parse import quote
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
@@ -94,17 +95,18 @@ def obtener_renders(clave: str) -> list[str]:
 
 def obtener_urls_renders(clave: str, base_url: str = "") -> list[str]:
     """Retorna URLs públicas de renders servidas desde Railway.
-    Las rutas se leen de config/business.yaml → renders."""
+    Usa el mount /assets → knowledge/ para que todas las rutas funcionen.
+    Los nombres de archivo se URL-encodean para manejar espacios."""
     grupo = _grupo_renders(_normalizar_codigo(clave))
     if not grupo:
         return []
     carpeta = grupo["carpeta"]
     urls = []
     for img in grupo.get("imagenes", []):
-        urls.append(f"{base_url}/knowledge/{carpeta}/{img}")
+        urls.append(f"{base_url}/assets/{carpeta}/{quote(img)}")
     video = grupo.get("video")
     if video:
-        urls.append(f"{base_url}/knowledge/{carpeta}/{video}")
+        urls.append(f"{base_url}/assets/{carpeta}/{quote(video)}")
     return urls
 
 
