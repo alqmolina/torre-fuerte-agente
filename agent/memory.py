@@ -1245,16 +1245,13 @@ async def obtener_pipeline_data() -> dict:
         grupos: dict[str, list[dict]] = {"caliente": [], "tibio": [], "frio": []}
 
         for lead in todos_los_leads:
-            temp_raw = (lead.temperatura or "").lower().strip()
-            # Normalizar frío/frio
-            if temp_raw in ("frío", "frio"):
-                grupo_key = "frio"
+            temp_raw = (lead.temperatura or "").lower().replace("í", "i").strip()
+            if temp_raw == "caliente":
+                grupo_key = "caliente"
             elif temp_raw == "tibio":
                 grupo_key = "tibio"
-            elif temp_raw == "caliente":
-                grupo_key = "caliente"
             else:
-                grupo_key = "frio"  # leads sin temperatura van a frío
+                grupo_key = "frio"  # frío, frio, vacío → frío
 
             # Último mensaje
             last_msg_result = await session.execute(
