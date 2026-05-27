@@ -168,6 +168,80 @@ def _autenticado(request: Request) -> bool:
     return _valid_token(request.cookies.get("tf_admin", ""))
 
 
+# ── Navegación compartida ─────────────────────────────────────────────────────
+
+_NAV_DD = (
+    '<a href="/admin">💬 Handoffs</a>'
+    '<a href="/admin/buscar">🔍 Buscar leads</a>'
+    '<a href="/admin/pipeline">📋 Pipeline</a>'
+    '<a href="/admin/visitas">📅 Visitas</a>'
+    '<a href="/admin/broadcast">📢 Broadcast</a>'
+    '<a href="/admin/dashboard">📊 Métricas</a>'
+)
+
+
+def _nav_css() -> str:
+    return (
+        "    .header { background: #1a3c5e; color: white; padding: 12px 16px; display: flex; align-items: center; gap: 10px; position: relative; flex-shrink: 0; }\n"
+        "    .header-title { flex: 1; min-width: 0; }\n"
+        "    .header-title .title { font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\n"
+        "    .header-title .sub { font-size: 12px; opacity: 0.7; margin-top: 1px; }\n"
+        "    .menu-wrap { position: relative; }\n"
+        "    .menu-btn { background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.25); padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; white-space: nowrap; display: flex; align-items: center; gap: 6px; }\n"
+        "    .menu-btn:hover { background: rgba(255,255,255,0.25); }\n"
+        "    .menu-btn .arrow { font-size: 10px; transition: transform 0.15s; }\n"
+        "    .menu-btn.open .arrow { transform: rotate(180deg); }\n"
+        "    .dropdown { display: none; position: absolute; top: calc(100% + 6px); right: 0; background: white; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.18); min-width: 180px; overflow: hidden; z-index: 999; }\n"
+        "    .dropdown.show { display: block; }\n"
+        "    .dropdown a { display: flex; align-items: center; gap: 10px; padding: 12px 16px; font-size: 14px; color: #1a3c5e; text-decoration: none; font-weight: 500; }\n"
+        "    .dropdown a:hover { background: #f0f4f8; }\n"
+        "    .dropdown a + a { border-top: 1px solid #f0f4f8; }\n"
+        "    .nav-green { color: white; background: #27ae60; font-weight: 600; font-size: 13px; padding: 6px 12px; border-radius: 6px; text-decoration: none; white-space: nowrap; }\n"
+        "    .nav-green:hover { background: #219a52; }\n"
+        "    .nav-glass { color: white; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.25); font-weight: 600; font-size: 13px; padding: 6px 12px; border-radius: 6px; text-decoration: none; white-space: nowrap; }\n"
+        "    .nav-glass:hover { background: rgba(255,255,255,0.25); }\n"
+        "    .nav-muted { color: rgba(255,255,255,0.6); font-size: 12px; text-decoration: none; white-space: nowrap; }\n"
+        "    .nav-muted:hover { color: white; }\n"
+    )
+
+
+def _nav_script() -> str:
+    return (
+        "\n  <script>\n"
+        "    function toggleMenu(e) {\n"
+        "      e.stopPropagation();\n"
+        "      const btn = document.getElementById('menuBtn');\n"
+        "      const dd = document.getElementById('dropdown');\n"
+        "      btn.classList.toggle('open');\n"
+        "      dd.classList.toggle('show');\n"
+        "    }\n"
+        "    document.addEventListener('click', () => {\n"
+        "      const b = document.getElementById('menuBtn'); const d = document.getElementById('dropdown');\n"
+        "      if (b) b.classList.remove('open'); if (d) d.classList.remove('show');\n"
+        "    });\n"
+        "  </script>"
+    )
+
+
+def _nav_html(titulo: str, subtitulo: str, extra: str = "") -> str:
+    xtra = f"\n    {extra}" if extra else ""
+    return (
+        '\n  <div class="header">'
+        '\n    <div class="header-title">'
+        f'\n      <div class="title">{titulo}</div>'
+        f'\n      <div class="sub">{subtitulo}</div>'
+        '\n    </div>'
+        f'{xtra}'
+        '\n    <a href="/admin/leads/nuevo" class="nav-green">➕ Lead</a>'
+        '\n    <div class="menu-wrap">'
+        '\n      <button class="menu-btn" id="menuBtn" onclick="toggleMenu(event)">☰ Menú <span class="arrow">▼</span></button>'
+        f'\n      <div class="dropdown" id="dropdown">{_NAV_DD}</div>'
+        '\n    </div>'
+        '\n    <a href="/admin/logout" class="nav-muted">Salir</a>'
+        '\n  </div>'
+    )
+
+
 # ── Login ────────────────────────────────────────────────────────────────────
 
 @router.get("/login", response_class=HTMLResponse)
@@ -293,6 +367,10 @@ async def admin_index(request: Request):
             </div>"""
         content = cards
 
+    _ncss = _nav_css()
+    _nh = _nav_html("Torre Fuerte · Panel Asesor", "Conversaciones en transferencia", extra=badge)
+    _nsc = _nav_script()
+
     return f"""<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -302,24 +380,7 @@ async def admin_index(request: Request):
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; min-height: 100vh; }}
-    .header {{ background: #1a3c5e; color: white; padding: 12px 16px; display: flex; align-items: center; gap: 10px; position: relative; }}
-    .header-title {{ flex: 1; min-width: 0; }}
-    .header-title .title {{ font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
-    .header-title .sub {{ font-size: 12px; opacity: 0.7; margin-top: 1px; }}
-    .btn-lead {{ color: white; background: #27ae60; font-weight: 600; font-size: 13px; padding: 6px 12px; border-radius: 6px; text-decoration: none; white-space: nowrap; }}
-    .btn-lead:hover {{ background: #219a52; }}
-    .btn-logout {{ color: rgba(255,255,255,0.6); font-size: 12px; text-decoration: none; white-space: nowrap; }}
-    .btn-logout:hover {{ color: white; }}
-    .menu-wrap {{ position: relative; }}
-    .menu-btn {{ background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.25); padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; white-space: nowrap; display: flex; align-items: center; gap: 6px; }}
-    .menu-btn:hover {{ background: rgba(255,255,255,0.25); }}
-    .menu-btn .arrow {{ font-size: 10px; transition: transform 0.15s; }}
-    .menu-btn.open .arrow {{ transform: rotate(180deg); }}
-    .dropdown {{ display: none; position: absolute; top: calc(100% + 6px); right: 0; background: white; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.18); min-width: 180px; overflow: hidden; z-index: 999; }}
-    .dropdown.show {{ display: block; }}
-    .dropdown a {{ display: flex; align-items: center; gap: 10px; padding: 12px 16px; font-size: 14px; color: #1a3c5e; text-decoration: none; font-weight: 500; }}
-    .dropdown a:hover {{ background: #f0f4f8; }}
-    .dropdown a + a {{ border-top: 1px solid #f0f4f8; }}
+{_ncss}
     .container {{ max-width: 620px; margin: 0 auto; padding: 16px; }}
     .card {{ background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); border-left: 4px solid #ccc; transition: box-shadow 0.15s; }}
     .card:hover {{ box-shadow: 0 3px 10px rgba(0,0,0,0.12); }}
@@ -333,45 +394,15 @@ async def admin_index(request: Request):
   </style>
 </head>
 <body>
-  <div class="header">
-    <div class="header-title">
-      <div class="title">Torre Fuerte · Panel Asesor</div>
-      <div class="sub">Conversaciones en transferencia</div>
-    </div>
-    {badge}
-    <a href="/admin/leads/nuevo" class="btn-lead">➕ Lead</a>
-    <div class="menu-wrap">
-      <button class="menu-btn" id="menuBtn" onclick="toggleMenu(event)">
-        ☰ Menú <span class="arrow">▼</span>
-      </button>
-      <div class="dropdown" id="dropdown">
-        <a href="/admin/buscar">🔍 Buscar leads</a>
-        <a href="/admin/pipeline">📋 Pipeline</a>
-        <a href="/admin/visitas">📅 Visitas</a>
-        <a href="/admin/broadcast">📢 Broadcast</a>
-        <a href="/admin/dashboard">📊 Métricas</a>
-      </div>
-    </div>
-    <a href="/admin/logout" class="btn-logout">Salir</a>
-  </div>
+{_nh}
   <div class="container">
     {content}
     <p style="text-align:center;font-size:12px;color:#bbb;margin-top:20px">Actualiza cada 15 segundos</p>
   </div>
   <script>
-    function toggleMenu(e) {{
-      e.stopPropagation();
-      const btn = document.getElementById('menuBtn');
-      const dd = document.getElementById('dropdown');
-      btn.classList.toggle('open');
-      dd.classList.toggle('show');
-    }}
-    document.addEventListener('click', () => {{
-      document.getElementById('menuBtn').classList.remove('open');
-      document.getElementById('dropdown').classList.remove('show');
-    }});
     setTimeout(() => location.reload(), 15000);
   </script>
+{_nsc}
 </body>
 </html>"""
 
@@ -742,6 +773,10 @@ async def admin_dashboard(request: Request):
     if not _autenticado(request):
         return RedirectResponse("/admin/login", status_code=302)
 
+    _ncss = _nav_css()
+    _nh = _nav_html("Torre Fuerte · Métricas", "Dashboard del agente en tiempo real")
+    _nsc = _nav_script()
+
     m = await obtener_metricas()
 
     def barra(valor, maximo, color):
@@ -853,7 +888,7 @@ async def admin_dashboard(request: Request):
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; }}
-    .header {{ background: #1a3c5e; color: white; padding: 16px 20px; display: flex; align-items: center; gap: 12px; }}
+{_ncss}
     .container {{ max-width: 960px; margin: 0 auto; padding: 20px 16px; }}
     .grid-4 {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 20px; }}
     .grid-2 {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin-bottom: 14px; }}
@@ -867,14 +902,7 @@ async def admin_dashboard(request: Request):
   </style>
 </head>
 <body>
-  <div class="header">
-    <a href="/admin" style="color:white;text-decoration:none;font-size:20px">←</a>
-    <div style="flex:1">
-      <div style="font-size:18px;font-weight:600">Torre Fuerte · Dashboard</div>
-      <div style="font-size:12px;opacity:0.7">Métricas del agente en tiempo real</div>
-    </div>
-    <a href="/admin/logout" style="color:rgba(255,255,255,0.6);font-size:12px;text-decoration:none">Salir</a>
-  </div>
+{_nh}
 
   <div class="container">
 
@@ -997,6 +1025,7 @@ async def admin_dashboard(request: Request):
 
     <p style="text-align:center;font-size:12px;color:#bbb;margin-top:8px">Actualiza al recargar la página</p>
   </div>
+{_nsc}
 </body>
 </html>"""
 
@@ -1067,49 +1096,48 @@ async def broadcast_form(request: Request):
     if not _autenticado(request):
         return RedirectResponse("/admin/login", status_code=302)
 
-    return """<!DOCTYPE html>
+    _nh = _nav_html(
+        "Torre Fuerte · Broadcast", "Envío masivo segmentado a leads",
+        extra='<a href="/admin/broadcast/historial" class="nav-glass">📋 Historial</a>',
+    )
+    _ncss = _nav_css()
+    _nsc = _nav_script()
+
+    return f"""<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Torre Fuerte — Broadcast</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; }
-    .header { background: #1a3c5e; color: white; padding: 16px 20px; display: flex; align-items: center; gap: 12px; }
-    .container { max-width: 660px; margin: 0 auto; padding: 20px 16px; }
-    .card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 16px; }
-    .card h3 { font-size: 13px; font-weight: 700; color: #1a3c5e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px; }
-    label { font-size: 13px; font-weight: 600; color: #555; }
-    select { border: 1px solid #ddd; border-radius: 8px; padding: 9px 12px; font-size: 14px; width: 100%; outline: none; }
-    select:focus { border-color: #1a3c5e; }
-    .check-group { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
-    .check-group label { font-weight: 400; display: flex; align-items: center; gap: 6px; cursor: pointer; }
-    textarea { width: 100%; border: 1px solid #ddd; border-radius: 8px; padding: 12px 14px;
-               font-size: 15px; font-family: inherit; resize: vertical; outline: none; line-height: 1.5; }
-    textarea:focus { border-color: #1a3c5e; }
-    .btn-primary { width: 100%; background: #1a3c5e; color: white; border: none; border-radius: 8px;
-                   padding: 14px; font-size: 16px; font-weight: 600; cursor: pointer; }
-    .btn-primary:hover { background: #15304e; }
-    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-    .btn-sec { background: #f0f4f8; color: #1a3c5e; border: 1px solid #d0dce8; border-radius: 8px;
-               padding: 9px 18px; font-size: 14px; font-weight: 600; cursor: pointer; }
-    .btn-sec:hover { background: #e2eaf3; }
-    .preview-box { margin-top: 12px; padding: 10px 14px; border-radius: 8px; font-size: 14px;
-                   background: #eaf2fb; color: #1a56db; display: none; }
-    .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; }}
+{_ncss}
+    .container {{ max-width: 660px; margin: 0 auto; padding: 20px 16px; }}
+    .card {{ background: white; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 16px; }}
+    .card h3 {{ font-size: 13px; font-weight: 700; color: #1a3c5e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px; }}
+    label {{ font-size: 13px; font-weight: 600; color: #555; }}
+    select {{ border: 1px solid #ddd; border-radius: 8px; padding: 9px 12px; font-size: 14px; width: 100%; outline: none; }}
+    select:focus {{ border-color: #1a3c5e; }}
+    .check-group {{ display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; }}
+    .check-group label {{ font-weight: 400; display: flex; align-items: center; gap: 6px; cursor: pointer; }}
+    textarea {{ width: 100%; border: 1px solid #ddd; border-radius: 8px; padding: 12px 14px;
+               font-size: 15px; font-family: inherit; resize: vertical; outline: none; line-height: 1.5; }}
+    textarea:focus {{ border-color: #1a3c5e; }}
+    .btn-primary {{ width: 100%; background: #1a3c5e; color: white; border: none; border-radius: 8px;
+                   padding: 14px; font-size: 16px; font-weight: 600; cursor: pointer; }}
+    .btn-primary:hover {{ background: #15304e; }}
+    .btn-primary:disabled {{ opacity: 0.5; cursor: not-allowed; }}
+    .btn-sec {{ background: #f0f4f8; color: #1a3c5e; border: 1px solid #d0dce8; border-radius: 8px;
+               padding: 9px 18px; font-size: 14px; font-weight: 600; cursor: pointer; }}
+    .btn-sec:hover {{ background: #e2eaf3; }}
+    .preview-box {{ margin-top: 12px; padding: 10px 14px; border-radius: 8px; font-size: 14px;
+                   background: #eaf2fb; color: #1a56db; display: none; }}
+    .field-row {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }}
   </style>
 </head>
 <body>
-  <div class="header">
-    <a href="/admin" style="color:white;text-decoration:none;font-size:20px">←</a>
-    <div style="flex:1">
-      <div style="font-size:18px;font-weight:600">Torre Fuerte · Broadcast</div>
-      <div style="font-size:12px;opacity:0.7">Envío masivo segmentado a leads</div>
-    </div>
-    <a href="/admin/broadcast/historial" style="color:rgba(255,255,255,0.8);font-size:12px;text-decoration:none;margin-right:12px">📋 Historial</a>
-    <a href="/admin/logout" style="color:rgba(255,255,255,0.6);font-size:12px;text-decoration:none">Salir</a>
-  </div>
+{_nh}
 
   <div class="container">
     <div class="card">
@@ -1186,11 +1214,11 @@ async def broadcast_form(request: Request):
   <script>
     const ta = document.getElementById('mensaje');
 
-    ta.addEventListener('input', function() {
+    ta.addEventListener('input', function() {{
       document.getElementById('chars').textContent = this.value.length + ' caracteres';
-    });
+    }});
 
-    function fmt(marca) {
+    function fmt(marca) {{
       const start = ta.selectionStart, end = ta.selectionEnd;
       const sel = ta.value.substring(start, end) || 'texto';
       const nuevo = ta.value.substring(0, start) + marca + sel + marca + ta.value.substring(end);
@@ -1198,57 +1226,57 @@ async def broadcast_form(request: Request):
       ta.focus();
       ta.setSelectionRange(start + marca.length, start + marca.length + sel.length);
       ta.dispatchEvent(new Event('input'));
-    }
+    }}
 
-    function ins(emoji) {
+    function ins(emoji) {{
       const pos = ta.selectionStart;
       ta.value = ta.value.substring(0, pos) + emoji + ta.value.substring(pos);
       ta.focus();
       ta.setSelectionRange(pos + emoji.length, pos + emoji.length);
       ta.dispatchEvent(new Event('input'));
-    }
+    }}
 
-    function mostrarPreview(input) {
+    function mostrarPreview(input) {{
       if (!input.files || !input.files[0]) return;
       const reader = new FileReader();
-      reader.onload = e => {
+      reader.onload = e => {{
         document.getElementById('img-thumb').src = e.target.result;
         document.getElementById('img-preview').style.display = 'block';
-      };
+      }};
       reader.readAsDataURL(input.files[0]);
-    }
+    }}
 
-    function quitarImagen() {
+    function quitarImagen() {{
       document.getElementById('imagen').value = '';
       document.getElementById('img-preview').style.display = 'none';
-    }
+    }}
 
-    function _filtros() {
+    function _filtros() {{
       const temps = Array.from(document.querySelectorAll('input[name="temp"]:checked')).map(c => c.value);
-      return {
+      return {{
         temperaturas: temps,
         idioma: document.getElementById('idioma').value,
         intencion: document.getElementById('intencion').value,
-      };
-    }
+      }};
+    }}
 
-    async function calcularDestinatarios() {
+    async function calcularDestinatarios() {{
       const f = _filtros();
-      if (!f.temperaturas.length) { alert('Selecciona al menos una temperatura'); return; }
-      const body = new URLSearchParams({ idioma: f.idioma, intencion: f.intencion });
+      if (!f.temperaturas.length) {{ alert('Selecciona al menos una temperatura'); return; }}
+      const body = new URLSearchParams({{ idioma: f.idioma, intencion: f.intencion }});
       f.temperaturas.forEach(t => body.append('temperaturas', t));
-      const r = await fetch('/admin/broadcast/preview', { method: 'POST', body });
+      const r = await fetch('/admin/broadcast/preview', {{ method: 'POST', body }});
       const data = await r.json();
       const box = document.getElementById('preview');
       box.style.display = 'block';
       box.innerHTML = '<strong>' + data.count + ' leads</strong> recibirán este mensaje';
-    }
+    }}
 
-    async function enviarBroadcast() {
+    async function enviarBroadcast() {{
       const f = _filtros();
       const mensaje = ta.value.trim();
-      if (!mensaje) { alert('Escribe un mensaje antes de enviar'); return; }
-      if (!f.temperaturas.length) { alert('Selecciona al menos una temperatura'); return; }
+      if (!mensaje) {{ alert('Escribe un mensaje antes de enviar'); return; }}
+      if (!f.temperaturas.length) {{ alert('Selecciona al menos una temperatura'); return; }}
       if (!confirm('¿Confirmar envío del broadcast? Esta acción enviará mensajes de WhatsApp reales.')) return;
 
       const btn = document.getElementById('send-btn');
@@ -1263,17 +1291,18 @@ async def broadcast_form(request: Request):
       const imgFile = document.getElementById('imagen').files[0];
       if (imgFile) body.append('imagen', imgFile);
 
-      const r = await fetch('/admin/broadcast', { method: 'POST', body });
+      const r = await fetch('/admin/broadcast', {{ method: 'POST', body }});
       const data = await r.json();
-      if (data.ok) {
+      if (data.ok) {{
         window.location.href = '/admin/broadcast/historial';
-      } else {
+      }} else {{
         btn.disabled = false;
         btn.textContent = '📤 Enviar broadcast';
         alert('Error: ' + (data.error || 'No se pudo iniciar el broadcast'));
-      }
-    }
+      }}
+    }}
   </script>
+{_nsc}
 </body>
 </html>"""
 
@@ -1342,6 +1371,13 @@ async def broadcast_historial(request: Request):
     if not _autenticado(request):
         return RedirectResponse("/admin/login", status_code=302)
 
+    _ncss = _nav_css()
+    _nh = _nav_html(
+        "Broadcast · Historial", "Últimas 30 campañas",
+        extra='<a href="/admin/broadcast" class="nav-glass">+ Nueva campaña</a>',
+    )
+    _nsc = _nav_script()
+
     campanas = await obtener_historial_broadcasts()
 
     filas = ""
@@ -1378,28 +1414,20 @@ async def broadcast_historial(request: Request):
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; }}
-    .header {{ background: #1a3c5e; color: white; padding: 16px 20px; display: flex; align-items: center; gap: 12px; }}
+{_ncss}
     .container {{ max-width: 700px; margin: 0 auto; padding: 20px 16px; }}
   </style>
 </head>
 <body>
-  <div class="header">
-    <a href="/admin/broadcast" style="color:white;text-decoration:none;font-size:20px">←</a>
-    <div style="flex:1">
-      <div style="font-size:18px;font-weight:600">Broadcast · Historial</div>
-      <div style="font-size:12px;opacity:0.7">Últimas 30 campañas</div>
-    </div>
-    <a href="/admin/broadcast" style="color:rgba(255,255,255,0.8);font-size:12px;text-decoration:none;margin-right:12px">+ Nueva campaña</a>
-    <a href="/admin/logout" style="color:rgba(255,255,255,0.6);font-size:12px;text-decoration:none">Salir</a>
-  </div>
+{_nh}
   <div class="container">
     {filas}
   </div>
   <script>
-    // Recargar si hay campañas en proceso
     const enProceso = document.querySelector('[style*="f39c12"]');
     if (enProceso) setTimeout(() => location.reload(), 5000);
   </script>
+{_nsc}
 </body>
 </html>"""
 
@@ -1414,6 +1442,10 @@ async def admin_buscar(
 ):
     if not _autenticado(request):
         return RedirectResponse("/admin/login", status_code=302)
+
+    _ncss = _nav_css()
+    _nh = _nav_html("Torre Fuerte · Buscar Leads", "Filtra por nombre, teléfono, apartamento o fechas")
+    _nsc = _nav_script()
 
     resultados = await buscar_leads(q, apto, fecha_chat, fecha_visita)
     hay_filtro = any([q, apto, fecha_chat, fecha_visita])
@@ -1473,7 +1505,7 @@ async def admin_buscar(
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; }}
-    .header {{ background: #1a3c5e; color: white; padding: 16px 20px; display: flex; align-items: center; gap: 12px; }}
+{_ncss}
     .container {{ max-width: 700px; margin: 0 auto; padding: 20px 16px; }}
     input {{ width: 100%; padding: 9px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; }}
     input:focus {{ outline: none; border-color: #1a3c5e; }}
@@ -1487,14 +1519,7 @@ async def admin_buscar(
   </style>
 </head>
 <body>
-  <div class="header">
-    <a href="/admin" style="color:white;text-decoration:none;font-size:20px">←</a>
-    <div style="flex:1">
-      <div style="font-size:18px;font-weight:600">Torre Fuerte · Buscar Leads</div>
-      <div style="font-size:12px;opacity:0.7">Filtra por nombre, teléfono, apartamento o fechas</div>
-    </div>
-    <a href="/admin/logout" style="color:rgba(255,255,255,0.6);font-size:12px;text-decoration:none">Salir</a>
-  </div>
+{_nh}
   <div class="container">
     <form method="get" action="/admin/buscar" style="background:white;border-radius:12px;padding:16px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,0.07)">
       <div class="grid">
@@ -1521,6 +1546,7 @@ async def admin_buscar(
     {total_txt}
     {filas}
   </div>
+{_nsc}
 </body>
 </html>"""
 
@@ -1529,6 +1555,16 @@ async def admin_buscar(
 async def admin_visitas(request: Request):
     if not _autenticado(request):
         return RedirectResponse("/admin/login", status_code=302)
+
+    _ncss = _nav_css()
+    _nh = _nav_html(
+        "Torre Fuerte · Visitas", "Próximas visitas al proyecto",
+        extra=(
+            '<a href="/admin/visitas/nueva" class="nav-green">➕ Nueva</a>'
+            ' <a href="/admin/visitas/export" class="nav-glass">📥 Reporte</a>'
+        ),
+    )
+    _nsc = _nav_script()
 
     params = request.query_params
     q_nombre   = params.get("nombre", "").strip()
@@ -1649,7 +1685,7 @@ async def admin_visitas(request: Request):
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; }}
-    .header {{ background: #1a3c5e; color: white; padding: 16px 20px; display: flex; align-items: center; gap: 12px; }}
+{_ncss}
     .container {{ max-width: 700px; margin: 0 auto; padding: 20px 16px; }}
     .search-card {{ background:white; border-radius:12px; padding:16px 18px; box-shadow:0 1px 4px rgba(0,0,0,0.08); margin-bottom:16px; }}
     .search-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; }}
@@ -1659,16 +1695,7 @@ async def admin_visitas(request: Request):
   </style>
 </head>
 <body>
-  <div class="header">
-    <a href="/admin" style="color:white;text-decoration:none;font-size:20px">←</a>
-    <div style="flex:1">
-      <div style="font-size:18px;font-weight:600">Torre Fuerte · Visitas</div>
-      <div style="font-size:12px;opacity:0.7">Próximas visitas al proyecto</div>
-    </div>
-    <a href="/admin/visitas/nueva" style="color:white;background:#27ae60;border-radius:6px;padding:6px 12px;font-size:12px;text-decoration:none;font-weight:600;margin-right:8px;white-space:nowrap">➕ Nueva</a>
-    <a href="/admin/visitas/export" style="color:white;background:rgba(255,255,255,0.15);border-radius:6px;padding:6px 12px;font-size:12px;text-decoration:none;font-weight:600;margin-right:10px;white-space:nowrap">📥 Reporte</a>
-    <a href="/admin/logout" style="color:rgba(255,255,255,0.6);font-size:12px;text-decoration:none">Salir</a>
-  </div>
+{_nh}
   <div class="container">
     <div class="search-card">
       <form method="get" action="/admin/visitas">
@@ -1693,6 +1720,7 @@ async def admin_visitas(request: Request):
     {resumen}
     {filas}
   </div>
+{_nsc}
 </body>
 </html>"""
 
@@ -1701,6 +1729,10 @@ async def admin_visitas(request: Request):
 async def visita_nueva_form(request: Request):
     if not _autenticado(request):
         return RedirectResponse("/admin/login", status_code=302)
+
+    _ncss = _nav_css()
+    _nh = _nav_html("Nueva visita / llamada", "Agendamiento manual")
+    _nsc = _nav_script()
 
     from datetime import date as _date
     hoy = _date.today().isoformat()
@@ -1717,7 +1749,7 @@ async def visita_nueva_form(request: Request):
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; }}
-    .header {{ background: #1a3c5e; color: white; padding: 16px 20px; display: flex; align-items: center; gap: 12px; }}
+{_ncss}
     .container {{ max-width: 500px; margin: 0 auto; padding: 24px 16px; }}
     .card {{ background: white; border-radius: 12px; padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }}
     .row-2 {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }}
@@ -1731,13 +1763,7 @@ async def visita_nueva_form(request: Request):
   </style>
 </head>
 <body>
-  <div class="header">
-    <a href="/admin/visitas" style="color:white;text-decoration:none;font-size:20px">←</a>
-    <div style="flex:1">
-      <div style="font-size:18px;font-weight:600">Nueva visita / llamada</div>
-      <div style="font-size:12px;opacity:0.7">Agendamiento manual</div>
-    </div>
-  </div>
+{_nh}
   <div class="container">
     <div class="card">
       <form method="post" action="/admin/visitas/nueva">
@@ -1777,6 +1803,7 @@ async def visita_nueva_form(request: Request):
       <a href="/admin/visitas" class="btn-sec">Cancelar</a>
     </div>
   </div>
+{_nsc}
 </body>
 </html>"""
 
@@ -1878,6 +1905,13 @@ async def visita_form(telefono: str, request: Request):
     nombre_v = _esc((perfil or {}).get("nombre") or "")
     tel_esc = _esc(telefono)
 
+    _ncss = _nav_css()
+    _nh = _nav_html(
+        "Agendar Visita", f"📱 {tel_esc}",
+        extra=f'<a href="/admin/chat/{tel_esc}" class="nav-glass">← Chat</a>',
+    )
+    _nsc = _nav_script()
+
     from datetime import date as _date
     hoy = _date.today().isoformat()
 
@@ -1894,7 +1928,7 @@ async def visita_form(telefono: str, request: Request):
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; }}
-    .header {{ background: #1a3c5e; color: white; padding: 16px 20px; display: flex; align-items: center; gap: 12px; }}
+{_ncss}
     .container {{ max-width: 520px; margin: 0 auto; padding: 20px 16px; }}
     .card {{ background: white; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }}
     label {{ display: block; font-size: 13px; font-weight: 600; color: #555; margin-bottom: 6px; }}
@@ -1911,13 +1945,7 @@ async def visita_form(telefono: str, request: Request):
   </style>
 </head>
 <body>
-  <div class="header">
-    <a href="/admin/chat/{tel_esc}" style="color:white;text-decoration:none;font-size:20px">←</a>
-    <div>
-      <div style="font-size:17px;font-weight:600">Agendar Visita</div>
-      <div style="font-size:12px;opacity:0.7">📱 {tel_esc}</div>
-    </div>
-  </div>
+{_nh}
   <div class="container">
     <form method="post" action="/admin/visita/{tel_esc}">
       <div class="card">
@@ -1947,6 +1975,7 @@ async def visita_form(telefono: str, request: Request):
       </div>
     </form>
   </div>
+{_nsc}
 </body>
 </html>"""
 
@@ -2023,6 +2052,13 @@ async def visita_editar_form(visita_id: int, request: Request):
         return HTMLResponse("<p>Visita no encontrada</p>", status_code=404)
 
     tel_esc = _esc(v["telefono"])
+    _ncss = _nav_css()
+    _nh = _nav_html(
+        "Editar visita", f"📱 {tel_esc}",
+        extra='<a href="/admin/visitas" class="nav-glass">← Visitas</a>',
+    )
+    _nsc = _nav_script()
+
     horas = ["09:00","09:30","10:00","10:30","11:00","11:30",
              "14:00","14:30","15:00","15:30","16:00","16:30","17:00"]
     opciones_hora = "".join(
@@ -2039,7 +2075,7 @@ async def visita_editar_form(visita_id: int, request: Request):
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; }}
-    .header {{ background: #1a3c5e; color: white; padding: 16px 20px; display: flex; align-items: center; gap: 12px; }}
+{_ncss}
     .container {{ max-width: 500px; margin: 0 auto; padding: 24px 16px; }}
     .card {{ background: white; border-radius: 12px; padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }}
     label {{ display:block; font-size:13px; font-weight:600; color:#444; margin-bottom:6px; }}
@@ -2051,13 +2087,7 @@ async def visita_editar_form(visita_id: int, request: Request):
   </style>
 </head>
 <body>
-  <div class="header">
-    <a href="/admin/visitas" style="color:white;text-decoration:none;font-size:20px">←</a>
-    <div style="flex:1">
-      <div style="font-size:18px;font-weight:600">Editar visita</div>
-      <div style="font-size:12px;opacity:0.7">📱 {tel_esc}</div>
-    </div>
-  </div>
+{_nh}
   <div class="container">
     <div class="card">
       <form method="post" action="/admin/visita/{visita_id}/editar">
@@ -2078,6 +2108,7 @@ async def visita_editar_form(visita_id: int, request: Request):
       <a href="/admin/visitas" class="btn-sec">Cancelar</a>
     </div>
   </div>
+{_nsc}
 </body>
 </html>"""
 
@@ -2177,6 +2208,10 @@ async def lead_nuevo_form(request: Request):
     if not _autenticado(request):
         return RedirectResponse("/admin/login", status_code=302)
 
+    _ncss = _nav_css()
+    _nh = _nav_html("Torre Fuerte · Nuevo Lead", "Registro manual de prospecto")
+    _nsc = _nav_script()
+
     alerta = ""
 
     return f"""<!DOCTYPE html>
@@ -2188,7 +2223,7 @@ async def lead_nuevo_form(request: Request):
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; }}
-    .header {{ background: #1a3c5e; color: white; padding: 16px 20px; display: flex; align-items: center; gap: 12px; }}
+{_ncss}
     .container {{ max-width: 560px; margin: 0 auto; padding: 20px 16px; }}
     .card {{ background: white; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }}
     label {{ display: block; font-size: 13px; font-weight: 600; color: #1a3c5e; margin-bottom: 5px; margin-top: 14px; }}
@@ -2209,13 +2244,7 @@ async def lead_nuevo_form(request: Request):
   </style>
 </head>
 <body>
-  <div class="header">
-    <a href="/admin" style="color:white;text-decoration:none;font-size:20px">←</a>
-    <div style="flex:1">
-      <div style="font-size:18px;font-weight:600">Torre Fuerte · Nuevo Lead</div>
-      <div style="font-size:12px;opacity:0.7">Registro manual de prospecto</div>
-    </div>
-  </div>
+{_nh}
   <div class="container">
     <div class="card">
       {alerta}
@@ -2276,6 +2305,7 @@ async def lead_nuevo_form(request: Request):
       <a href="/admin" class="btn-sec">Cancelar</a>
     </div>
   </div>
+{_nsc}
 </body>
 </html>"""
 
@@ -2338,6 +2368,14 @@ async def lead_historial(telefono: str, request: Request):
     eventos = await obtener_actividad_lead(telefono)
     tel_esc = _esc(telefono)
 
+    _ncss = _nav_css()
+    _nh = _nav_html(
+        f"{_esc(nombre)} · Historial",
+        f"{len(eventos)} evento{'s' if len(eventos)!=1 else ''} registrado{'s' if len(eventos)!=1 else ''}",
+        extra=f'<a href="/admin/chat/{tel_esc}" class="nav-glass">← Chat</a>',
+    )
+    _nsc = _nav_script()
+
     _TIPOS_COLOR = {
         "registro": "#1a3c5e", "visita": "#27ae60", "handoff": "#e67e22",
         "seguimiento": "#8e44ad", "nota": "#2980b9", "mensaje": "#7f8c8d",
@@ -2375,24 +2413,18 @@ async def lead_historial(telefono: str, request: Request):
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; }}
-    .header {{ background: #1a3c5e; color: white; padding: 16px 20px; display: flex; align-items: center; gap: 12px; }}
+{_ncss}
     .container {{ max-width: 600px; margin: 0 auto; padding: 20px 16px; }}
   </style>
 </head>
 <body>
-  <div class="header">
-    <a href="/admin/chat/{tel_esc}" style="color:white;text-decoration:none;font-size:20px">←</a>
-    <div style="flex:1">
-      <div style="font-size:18px;font-weight:600">{_esc(nombre)} · Historial</div>
-      <div style="font-size:12px;opacity:0.7">{len(eventos)} evento{"s" if len(eventos)!=1 else ""} registrado{"s" if len(eventos)!=1 else ""}</div>
-    </div>
-    <a href="/admin/chat/{tel_esc}" style="color:rgba(255,255,255,0.7);font-size:12px;text-decoration:none">Ver chat</a>
-  </div>
+{_nh}
   <div class="container">
     <div style="background:white;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.07)">
       {items}
     </div>
   </div>
+{_nsc}
 </body>
 </html>"""
 
@@ -2413,6 +2445,13 @@ async def lead_editar_form(telefono: str, request: Request):
     temp_v = perfil.get("temperatura") or ""
     int_v = perfil.get("intencion") or ""
 
+    _ncss = _nav_css()
+    _nh = _nav_html(
+        "Editar Lead", f"📱 {tel_esc}",
+        extra=f'<a href="/admin/chat/{tel_esc}" class="nav-glass">← Chat</a>',
+    )
+    _nsc = _nav_script()
+
     def sel_temp(val):
         return 'selected' if temp_v == val else ''
 
@@ -2428,7 +2467,7 @@ async def lead_editar_form(telefono: str, request: Request):
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; }}
-    .header {{ background: #1a3c5e; color: white; padding: 16px 20px; display: flex; align-items: center; gap: 12px; }}
+{_ncss}
     .container {{ max-width: 520px; margin: 0 auto; padding: 20px 16px; }}
     .card {{ background: white; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 14px; }}
     label {{ display: block; font-size: 13px; font-weight: 600; color: #555; margin-bottom: 6px; }}
@@ -2448,13 +2487,7 @@ async def lead_editar_form(telefono: str, request: Request):
   </style>
 </head>
 <body>
-  <div class="header">
-    <a href="/admin/chat/{tel_esc}" style="color:white;text-decoration:none;font-size:20px">←</a>
-    <div>
-      <div style="font-size:17px;font-weight:600">Editar Lead</div>
-      <div style="font-size:12px;opacity:0.7">📱 {tel_esc}</div>
-    </div>
-  </div>
+{_nh}
 
   <div class="container">
     <form method="post" action="/admin/lead/{tel_esc}/editar">
@@ -2510,6 +2543,7 @@ async def lead_editar_form(telefono: str, request: Request):
       btn.className = 'temp-btn ' + cls;
     }}
   </script>
+{_nsc}
 </body>
 </html>"""
 
@@ -2705,6 +2739,9 @@ async def admin_pipeline(request: Request):
     col_frio = _render_columna("frio", "❄️", "FRÍO")
 
     total_leads = sum(len(data.get(k, [])) for k in ("caliente", "tibio", "frio"))
+    _ncss = _nav_css()
+    _nh = _nav_html("Torre Fuerte · Pipeline", f"{total_leads} leads en pipeline")
+    _nsc = _nav_script()
 
     return f"""<!DOCTYPE html>
 <html lang="es">
@@ -2715,26 +2752,7 @@ async def admin_pipeline(request: Request):
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; min-height: 100vh; }}
-
-    /* Header — igual al resto del admin */
-    .header {{ background: #1a3c5e; color: white; padding: 12px 16px; display: flex; align-items: center; gap: 10px; position: relative; }}
-    .header-title {{ flex: 1; min-width: 0; }}
-    .header-title .title {{ font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
-    .header-title .sub {{ font-size: 12px; opacity: 0.7; margin-top: 1px; }}
-    .btn-lead {{ color: white; background: #27ae60; font-weight: 600; font-size: 13px; padding: 6px 12px; border-radius: 6px; text-decoration: none; white-space: nowrap; }}
-    .btn-lead:hover {{ background: #219a52; }}
-    .btn-logout {{ color: rgba(255,255,255,0.6); font-size: 12px; text-decoration: none; white-space: nowrap; }}
-    .btn-logout:hover {{ color: white; }}
-    .menu-wrap {{ position: relative; }}
-    .menu-btn {{ background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.25); padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; white-space: nowrap; display: flex; align-items: center; gap: 6px; }}
-    .menu-btn:hover {{ background: rgba(255,255,255,0.25); }}
-    .menu-btn .arrow {{ font-size: 10px; transition: transform 0.15s; }}
-    .menu-btn.open .arrow {{ transform: rotate(180deg); }}
-    .dropdown {{ display: none; position: absolute; top: calc(100% + 6px); right: 0; background: white; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.18); min-width: 180px; overflow: hidden; z-index: 999; }}
-    .dropdown.show {{ display: block; }}
-    .dropdown a {{ display: flex; align-items: center; gap: 10px; padding: 12px 16px; font-size: 14px; color: #1a3c5e; text-decoration: none; font-weight: 500; }}
-    .dropdown a:hover {{ background: #f0f4f8; }}
-    .dropdown a + a {{ border-top: 1px solid #f0f4f8; }}
+{_ncss}
 
     /* Kanban board */
     .kanban-container {{ padding: 16px; overflow-x: auto; }}
@@ -2790,26 +2808,7 @@ async def admin_pipeline(request: Request):
   </style>
 </head>
 <body>
-  <div class="header">
-    <div class="header-title">
-      <div class="title">Torre Fuerte · Pipeline</div>
-      <div class="sub">{total_leads} leads en pipeline</div>
-    </div>
-    <a href="/admin/leads/nuevo" class="btn-lead">➕ Lead</a>
-    <div class="menu-wrap">
-      <button class="menu-btn" id="menuBtn" onclick="toggleMenu(event)">
-        ☰ Menú <span class="arrow">▼</span>
-      </button>
-      <div class="dropdown" id="dropdown">
-        <a href="/admin/buscar">🔍 Buscar leads</a>
-        <a href="/admin/pipeline">📋 Pipeline</a>
-        <a href="/admin/visitas">📅 Visitas</a>
-        <a href="/admin/broadcast">📢 Broadcast</a>
-        <a href="/admin/dashboard">📊 Métricas</a>
-      </div>
-    </div>
-    <a href="/admin/logout" class="btn-logout">Salir</a>
-  </div>
+{_nh}
 
   <div class="kanban-container">
     <div class="kanban-board" id="kanbanBoard">
@@ -2824,19 +2823,6 @@ async def admin_pipeline(request: Request):
   </div>
 
   <script>
-    /* ─── Dropdown ──────────────────────────────────────────────────── */
-    function toggleMenu(e) {{
-      e.stopPropagation();
-      const btn = document.getElementById('menuBtn');
-      const dd = document.getElementById('dropdown');
-      btn.classList.toggle('open');
-      dd.classList.toggle('show');
-    }}
-    document.addEventListener('click', () => {{
-      document.getElementById('menuBtn').classList.remove('open');
-      document.getElementById('dropdown').classList.remove('show');
-    }});
-
     /* ─── Auto-refresh cada 30s ─────────────────────────────────────── */
     let segsDesde = 0;
     const INTERVALO = 30;
@@ -3003,5 +2989,6 @@ async def admin_pipeline(request: Request):
       }}
     }}, 1000);
   </script>
+{_nsc}
 </body>
 </html>"""
