@@ -47,11 +47,11 @@ class ProveedorMeta(ProveedorWhatsApp):
                         ))
         return mensajes
 
-    async def enviar_mensaje(self, telefono: str, mensaje: str) -> bool:
-        """Envía mensaje de texto via Meta WhatsApp Cloud API."""
+    async def enviar_mensaje(self, telefono: str, mensaje: str) -> str | None:
+        """Envía mensaje de texto via Meta WhatsApp Cloud API. Retorna el wamid o None."""
         if not self.access_token or not self.phone_number_id:
             logger.warning("META_ACCESS_TOKEN o META_PHONE_NUMBER_ID no configurados")
-            return False
+            return None
         url = f"https://graph.facebook.com/{self.api_version}/{self.phone_number_id}/messages"
         headers = {
             "Authorization": f"Bearer {self.access_token}",
@@ -67,7 +67,25 @@ class ProveedorMeta(ProveedorWhatsApp):
             r = await client.post(url, json=payload, headers=headers)
             if r.status_code != 200:
                 logger.error(f"Error Meta API: {r.status_code} — {r.text}")
-            return r.status_code == 200
+                return None
+            try:
+                wamid = r.json().get("messages", [{}])[0].get("id")
+                return wamid or None
+            except Exception:
+                return None
+
+    def parsear_statuses_from_body(self, body: dict) -> list[dict]:
+        """Extrae actualizaciones de estado de entrega/lectura del payload de Meta."""
+        statuses = []
+        for entry in body.get("entry", []):
+            for change in entry.get("changes", []):
+                value = change.get("value", {})
+                for st in value.get("statuses", []):
+                    wamid = st.get("id")
+                    status = st.get("status")  # "sent" | "delivered" | "read"
+                    if wamid and status:
+                        statuses.append({"wamid": wamid, "status": status})
+        return statuses
 
     async def _subir_archivo_local(self, ruta_local: str) -> str | None:
         """Lee un archivo del filesystem local y lo sube a Meta para obtener un media_id."""

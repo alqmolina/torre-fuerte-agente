@@ -20,7 +20,7 @@ from agent.memory import (
     activar_handoff, desactivar_handoff, esta_en_handoff,
     debe_enviar_aviso_handoff, registrar_aviso_handoff,
     obtener_leads_pendientes_handoff,
-    mensaje_ya_procesado, marcar_mensaje_procesado,
+    mensaje_ya_procesado, marcar_mensaje_procesado, actualizar_status_mensaje,
     obtener_leads_para_seguimiento, registrar_seguimiento,
     guardar_visita, cancelar_visita, reagendar_visita,
     obtener_visitas_para_recordatorio, marcar_recordatorio,
@@ -515,10 +515,17 @@ async def _procesar_mensaje_canal(msg, prov) -> None:
         texto_a_guardar += f"\n[Sistema: renders enviados: {', '.join(claves_render)}]"
 
     await guardar_mensaje(msg.telefono, "user", msg.texto)
-    await guardar_mensaje(msg.telefono, "assistant", texto_a_guardar)
 
+    # Enviar primero para capturar el wamid (identificador del mensaje en Meta)
+    wamid = None
     if texto_limpio:
-        await prov.enviar_mensaje(msg.telefono, texto_limpio)
+        result = await prov.enviar_mensaje(msg.telefono, texto_limpio)
+        wamid = result if isinstance(result, str) else None
+
+    await guardar_mensaje(
+        msg.telefono, "assistant", texto_a_guardar,
+        wamid=wamid, status="enviado" if wamid else None,
+    )
 
     for codigo in codigos_plano:
         ruta = obtener_plano(codigo)
@@ -654,6 +661,17 @@ async def _procesar_mensaje_canal(msg, prov) -> None:
 async def webhook_handler(request: Request):
     """Recibe mensajes de WhatsApp y los procesa con el pipeline del agente."""
     try:
+        # Procesar actualizaciones de estado (entregado/leído) si el proveedor lo soporta
+        if hasattr(proveedor, "parsear_statuses_from_body"):
+            try:
+                body = await request.json()  # Starlette cachea el body, seguro llamar varias veces
+                statuses = proveedor.parsear_statuses_from_body(body)
+                for st in statuses:
+                    await actualizar_status_mensaje(st["wamid"], st["status"])
+                    logger.debug(f"Estado actualizado: {st['wamid']} → {st['status']}")
+            except Exception as e:
+                logger.debug(f"No se pudieron procesar statuses: {e}")
+
         mensajes = await proveedor.parsear_webhook(request)
 
         for msg in mensajes:

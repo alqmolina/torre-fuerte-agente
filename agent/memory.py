@@ -4,7 +4,7 @@ import os
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import String, Text, DateTime, select, Integer, Boolean, func, distinct, or_
+from sqlalchemy import String, Text, DateTime, select, Integer, Boolean, func, distinct, or_, text
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -45,6 +45,8 @@ class Mensaje(Base):
     role: Mapped[str] = mapped_column(String(20))
     content: Mapped[str] = mapped_column(Text)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    wamid: Mapped[str | None] = mapped_column(String(200), nullable=True, default=None)
+    status: Mapped[str | None] = mapped_column(String(20), nullable=True, default=None)
 
 
 class MensajeProcesado(Base):
@@ -170,14 +172,54 @@ class Handoff(Base):
 async def inicializar_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Migrate: add wamid/status to mensajes if missing (safe to run repeatedly)
+        is_pg = "postgresql" in str(engine.url)
+        if is_pg:
+            for col_def in [
+                "ALTER TABLE mensajes ADD COLUMN IF NOT EXISTS wamid VARCHAR(200)",
+                "ALTER TABLE mensajes ADD COLUMN IF NOT EXISTS status VARCHAR(20)",
+            ]:
+                try:
+                    await conn.execute(text(col_def))
+                except Exception:
+                    pass
+        else:
+            for col_def in ["wamid VARCHAR(200)", "status VARCHAR(20)"]:
+                try:
+                    await conn.execute(text(f"ALTER TABLE mensajes ADD COLUMN {col_def}"))
+                except Exception:
+                    pass  # column already exists
 
 
 # ── Mensajes ──────────────────────────────────────────────────────────────────
 
-async def guardar_mensaje(telefono: str, role: str, content: str):
+async def guardar_mensaje(telefono: str, role: str, content: str, wamid: str | None = None, status: str | None = None) -> int:
+    """Guarda un mensaje y retorna su ID de base de datos."""
     async with async_session() as session:
-        session.add(Mensaje(telefono=telefono, role=role, content=content, timestamp=datetime.utcnow()))
+        m = Mensaje(
+            telefono=telefono, role=role, content=content,
+            timestamp=datetime.utcnow(), wamid=wamid, status=status
+        )
+        session.add(m)
         await session.commit()
+        await session.refresh(m)
+        return m.id
+
+
+async def actualizar_status_mensaje(wamid: str, status: str) -> None:
+    """Actualiza el estado de entrega/lectura de un mensaje por su wamid."""
+    if not wamid:
+        return
+    async with async_session() as session:
+        result = await session.execute(select(Mensaje).where(Mensaje.wamid == wamid))
+        msg = result.scalar_one_or_none()
+        if msg:
+            _orden = {"enviado": 0, "recibido": 1, "leido": 2}
+            estado_nuevo = {"sent": "enviado", "delivered": "recibido", "read": "leido"}.get(status, status)
+            # Solo avanzar estado, nunca retroceder
+            if _orden.get(estado_nuevo, 0) > _orden.get(msg.status or "enviado", 0):
+                msg.status = estado_nuevo
+                await session.commit()
 
 
 async def obtener_historial(telefono: str, limite: int = 50) -> list[dict]:
@@ -191,7 +233,16 @@ async def obtener_historial(telefono: str, limite: int = 50) -> list[dict]:
         result = await session.execute(query)
         mensajes = result.scalars().all()
         mensajes.reverse()
-        return [{"role": m.role, "content": m.content, "timestamp": _col(m.timestamp)} for m in mensajes]
+        return [
+            {
+                "role": m.role,
+                "content": m.content,
+                "timestamp": _col(m.timestamp),
+                "wamid": m.wamid,
+                "status": m.status,
+            }
+            for m in mensajes
+        ]
 
 
 async def limpiar_historial(telefono: str):

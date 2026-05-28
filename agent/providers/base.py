@@ -24,8 +24,8 @@ class ProveedorWhatsApp(ABC):
         ...
 
     @abstractmethod
-    async def enviar_mensaje(self, telefono: str, mensaje: str) -> bool:
-        """Envía un mensaje de texto. Retorna True si fue exitoso."""
+    async def enviar_mensaje(self, telefono: str, mensaje: str) -> str | bool | None:
+        """Envía un mensaje de texto. Meta retorna el wamid (str) o None; otros retornan bool."""
         ...
 
     async def enviar_media(self, telefono: str, url_media: str, caption: str = "") -> bool:

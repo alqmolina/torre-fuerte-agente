@@ -52,6 +52,7 @@ from agent.memory import (
     buscar_leads,
     obtener_actividad_lead,
     obtener_pipeline_data,
+    actualizar_status_mensaje,
     Handoff,
     async_session,
 )
@@ -510,6 +511,17 @@ async def admin_chat(telefono: str, request: Request):
             mensajes_html += f'<div style="text-align:center;margin:14px 0 8px"><span style="background:#d0dce8;color:#555;font-size:11px;border-radius:10px;padding:3px 12px">{fecha_label}</span></div>'
 
         ts_color = "rgba(255,255,255,0.5)" if es_bot else "#aaa"
+        # Estado del mensaje (solo para mensajes del bot)
+        status = msg.get("status") if es_bot else None
+        if es_bot:
+            if status == "leido":
+                tick_html = '<span style="color:#4FC3F7;font-size:11px;margin-left:3px">✓✓</span>'
+            elif status == "recibido":
+                tick_html = '<span style="color:rgba(255,255,255,0.55);font-size:11px;margin-left:3px">✓✓</span>'
+            else:
+                tick_html = '<span style="color:rgba(255,255,255,0.35);font-size:11px;margin-left:3px">✓</span>'
+        else:
+            tick_html = ""
         mensajes_html += f"""
         <div style="display:flex;justify-content:{align};margin-bottom:10px;padding:0 4px">
           <div style="max-width:78%;background:{bg};color:{color};padding:10px 14px;
@@ -517,7 +529,7 @@ async def admin_chat(telefono: str, request: Request):
                       box-shadow:0 1px 3px rgba(0,0,0,0.1)">
             <div style="font-size:10px;opacity:0.55;margin-bottom:4px;font-weight:600">{label}</div>
             {contenido_esc}
-            <div style="font-size:10px;color:{ts_color};text-align:right;margin-top:5px">{ts_hora}</div>
+            <div style="font-size:10px;color:{ts_color};text-align:right;margin-top:5px;display:flex;align-items:center;justify-content:flex-end;gap:2px">{ts_hora}{tick_html}</div>
           </div>
         </div>"""
 
@@ -742,9 +754,11 @@ async def admin_send(telefono: str, request: Request, mensaje: str = Form(...)):
         return RedirectResponse("/admin/login", status_code=302)
     if not mensaje.strip():
         return {"error": "Mensaje vacío"}
+    wamid = None
     if proveedor:
-        await proveedor.enviar_mensaje(telefono, mensaje.strip())
-    await guardar_mensaje(telefono, "assistant", mensaje.strip())
+        result = await proveedor.enviar_mensaje(telefono, mensaje.strip())
+        wamid = result if isinstance(result, str) else None
+    await guardar_mensaje(telefono, "assistant", mensaje.strip(), wamid=wamid, status="enviado" if wamid else None)
     return {"status": "ok"}
 
 
