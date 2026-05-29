@@ -452,10 +452,12 @@ async def admin_chat(telefono: str, request: Request):
             color = "#27ae60" if v["estado"] == "confirmada" else "#aaa"
             tachado = "text-decoration:line-through;color:#aaa" if v["estado"] == "cancelada" else ""
             fecha_fmt = _fmt_fecha(v["fecha"])
+            es_llamada_v = (v.get("notas") or "").startswith("📞")
+            icono_v = "📞" if es_llamada_v else "📅"
             visitas_items_html += (
                 f'<div style="padding:8px 0;border-bottom:1px solid #a9dfbf;font-size:13px">'
-                f'<div style="font-weight:600;color:{color};{tachado}">📅 {_esc(fecha_fmt)} · ⏰ {_esc(v["hora"])}</div>'
-                + (f'<div style="font-size:12px;color:#666;margin-top:2px">{_esc(v["notas"])}</div>' if v["notas"] else '')
+                f'<div style="font-weight:600;color:{color};{tachado}">{icono_v} {_esc(fecha_fmt)} · ⏰ {_esc(v["hora"])}</div>'
+                + (f'<div style="font-size:12px;color:#666;margin-top:2px">{_esc(v["notas"])}</div>' if v["notas"] and not es_llamada_v else '')
                 + f'<div style="font-size:11px;color:#aaa;margin-top:2px">{v["estado"].upper()}</div>'
                 f'</div>'
             )
@@ -1644,14 +1646,20 @@ async def admin_visitas(request: Request):
                 f'</form>'
             )
 
+        es_llamada = (v.get("notas") or "").startswith("📞")
+        icono_tipo = "📞" if es_llamada else "📅"
+        tipo_label = "Llamada" if es_llamada else "Visita"
         filas += (
             f'<div style="background:white;border-radius:10px;padding:14px 16px;margin-bottom:10px;'
             f'box-shadow:0 1px 4px rgba(0,0,0,0.08);border-left:4px solid {borde};{opacidad}">'
             f'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">'
             f'<div>'
-            f'<div style="font-weight:600;font-size:15px;color:#1a3c5e">{_esc(v["nombre"] or "Sin nombre")}{etiqueta}</div>'
-            f'<div style="font-size:13px;color:{color_fecha};font-weight:600;margin-top:4px">📅 {_esc(fecha_fmt)} · ⏰ {_esc(v["hora"])}</div>'
-            + (f'<div style="font-size:13px;color:#666;margin-top:4px">{_esc(v["notas"])}</div>' if v["notas"] else '')
+            f'<div style="font-weight:600;font-size:15px;color:#1a3c5e">{_esc(v["nombre"] or "Sin nombre")}'
+            f'<span style="font-size:11px;font-weight:600;margin-left:8px;padding:1px 7px;border-radius:10px;'
+            f'background:{"#e8f5e9" if not es_llamada else "#e3f2fd"};color:{"#1a7a4a" if not es_llamada else "#1565c0"}">'
+            f'{icono_tipo} {tipo_label}</span>{etiqueta}</div>'
+            f'<div style="font-size:13px;color:{color_fecha};font-weight:600;margin-top:4px">{icono_tipo} {_esc(fecha_fmt)} · ⏰ {_esc(v["hora"])}</div>'
+            + (f'<div style="font-size:13px;color:#666;margin-top:4px">{_esc(v["notas"])}</div>' if v["notas"] and not es_llamada else '')
             + f'<div style="font-size:12px;color:#999;margin-top:4px">📱 {_esc(v["telefono"])}</div>'
             f'</div>'
             f'<div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">'
