@@ -682,14 +682,32 @@ async def admin_chat(telefono: str, request: Request):
   </div>
   <script>
     const msgs = document.getElementById('msgs');
-    msgs.scrollTop = msgs.scrollHeight;
     const txt = document.getElementById('txt');
+    const _scrollKey = 'chatScroll_{tel_esc}';
+
+    // Restaurar posición de scroll tras auto-refresh, o ir al fondo en primera carga
+    (function() {{
+      const atBottom = sessionStorage.getItem(_scrollKey + '_bot');
+      const saved    = sessionStorage.getItem(_scrollKey);
+      sessionStorage.removeItem(_scrollKey);
+      sessionStorage.removeItem(_scrollKey + '_bot');
+      if (atBottom === '1' || saved === null) {{
+        msgs.scrollTop = msgs.scrollHeight;
+      }} else {{
+        msgs.scrollTop = parseInt(saved) || msgs.scrollHeight;
+      }}
+    }})();
+
+    function _guardarScroll() {{
+      const atBottom = msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 80;
+      sessionStorage.setItem(_scrollKey + '_bot', atBottom ? '1' : '0');
+      if (!atBottom) sessionStorage.setItem(_scrollKey, msgs.scrollTop);
+    }}
 
     function archivoSeleccionado(input) {{
       if (input.files && input.files[0]) {{
-        const preview = document.getElementById('file-preview');
         document.getElementById('file-name').textContent = '📎 ' + input.files[0].name;
-        preview.style.display = 'flex';
+        document.getElementById('file-preview').style.display = 'flex';
       }}
     }}
 
@@ -723,6 +741,8 @@ async def admin_chat(telefono: str, request: Request):
           txt.value = '';
           txt.style.height = 'auto';
         }}
+        // Al enviar siempre ir al fondo
+        sessionStorage.setItem(_scrollKey + '_bot', '1');
         location.reload();
       }} finally {{
         btn.disabled = false;
@@ -739,6 +759,7 @@ async def admin_chat(telefono: str, request: Request):
 
     function intentarRefresh() {{
       if (!_usuarioEditando() && !txt.value.trim()) {{
+        _guardarScroll();
         location.reload();
       }} else {{
         setTimeout(intentarRefresh, 4000);
