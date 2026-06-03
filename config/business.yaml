@@ -110,19 +110,15 @@ renders:
     video: null
 
 # ── Disponibilidad ───────────────────────────────────────────
-# Lista de unidades disponibles con sus características.
-# El agente usa estos datos para responder preguntas de precio y disponibilidad.
+# Lista de unidades disponibles con precio visible (8 unidades activas).
+# Las "otras tipologías" (F-501, D-701, F-801, G-802, B-902, D-1011, E-1012, PH-1112)
+# no se listan aquí — el agente solo comparte área/renders/planos para ellas.
 disponibilidad:
   - apto: "D-401"
     nivel: 4
     area: 119
     hab: 3
     precio: 1288200000
-  - apto: "F-501"
-    nivel: 5
-    area: 114.24
-    hab: 3
-    precio: 1242672000
   - apto: "G-502"
     nivel: 5
     area: 159.58
@@ -138,51 +134,26 @@ disponibilidad:
     area: 139.53
     hab: 3
     precio: 1541350000
-  - apto: "D-701"
-    nivel: 7
-    area: 119
-    hab: 3
-    precio: 1298700000
   - apto: "E-702"
     nivel: 7
     area: 187.96
     hab: 4
     precio: 2043988000
-  - apto: "F-801"
-    nivel: 8
-    area: 114.24
-    hab: 3
-    precio: 1253172000
-  - apto: "G-802"
-    nivel: 8
-    area: 159.58
-    hab: 4
-    precio: 1755174000
-  - apto: "B-902"
-    nivel: 9
-    area: 134.72
-    hab: 3
-    precio: 1467616000
-  - apto: "D-1011"
-    nivel: 10
-    area: 119
-    hab: 3
-    precio: 1309200000
-  - apto: "E-1012"
-    nivel: 10
-    area: 187.61
-    hab: 4
-    precio: 2050883000
   - apto: "PH-1111"
     nivel: "11-12"
     area: 247.06
     hab: 4
     precio: 3407898000
-  - apto: "PH-1112"
-    nivel: "11-12"
-    area: 301.24
-    hab: 4
-    precio: 4128492000
+  - apto: "Local-86"
+    nivel: 1
+    area: 27.54
+    hab: 0
+    precio: 495720000
+  - apto: "Local-96"
+    nivel: 1
+    area: 29.43
+    hab: 0
+    precio: 529740000
 
 # ── Mensajes automáticos ─────────────────────────────────────
 # Todos los mensajes que el agente envía automáticamente
