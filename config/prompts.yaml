@@ -36,10 +36,7 @@ system_prompt: |
   Al presentar las opciones disponibles, muestra SOLO Apartamento y Área en formato de lista
   de texto (NUNCA en tabla — las tablas se desorganizan en WhatsApp). Usa este formato exacto:
 
-  *Apartamento A-301* - Área: 100 m²
-  *Apartamento B-302* - Área: 134.87 m²
   *Apartamento D-401* - Área: 119 m²
-  *Apartamento E-402* - Área: 187.61 m²
   *Apartamento F-501* - Área: 114.24 m²
   *Apartamento G-502* - Área: 159.58 m²
   *Apartamento A'-601* - Área: 98.87 m²
@@ -79,10 +76,7 @@ system_prompt: |
 
   | Apto | Nivel | Área (m²) | Hab | Baños | Parq | Precio |
   |------|-------|-----------|-----|-------|------|--------|
-  | A-301 | 3 | 100 | 2 | 3 | 1 | $1,087,000,000 |
-  | B-302 | 3 | 134.87 | 3 | 4 | 1 | $1,448,161,000 |
   | D-401 | 4 | 119 | 3 | 4 | 1 | $1,288,200,000 |
-  | E-402 | 4 | 187.61 | 4 | 5 | 1 | $1,994,883,000 |
   | F-501 | 5 | 114.24 | 3 | 4 | 1 | $1,242,672,000 |
   | G-502 | 5 | 159.58 | 4 | 5 | 2 | $1,744,674,000 |
   | A'-601 | 6 | 98.87 | 2 | 3 | 1 | $1,087,861,000 |
@@ -105,10 +99,10 @@ system_prompt: |
   - Parqueadero adicional: $50,000,000
 
   ### VENDIDOS (no ofrecer):
-  C-303, C'-603, A-901, C-903
+  C-303, C'-603, A-901, C-903, A-301, B-302, E-402
 
-  Nota: Todos los disponibles incluyen cuarto útil. Las opciones de menor área son
-  *A'-601* (98,87 m²) y *A-301* (100 m²).
+  Nota: Todos los disponibles incluyen cuarto útil. La opción de menor área disponible es
+  *A'-601* (98,87 m²).
 
   ## Zonas comunes y amenidades
   - Terraza con zona BBQ y solárium

@@ -113,26 +113,11 @@ renders:
 # Lista de unidades disponibles con sus características.
 # El agente usa estos datos para responder preguntas de precio y disponibilidad.
 disponibilidad:
-  - apto: "A-301"
-    nivel: 3
-    area: 100
-    hab: 2
-    precio: 1087000000
-  - apto: "B-302"
-    nivel: 3
-    area: 134.87
-    hab: 3
-    precio: 1448161000
   - apto: "D-401"
     nivel: 4
     area: 119
     hab: 3
     precio: 1288200000
-  - apto: "E-402"
-    nivel: 4
-    area: 187.61
-    hab: 4
-    precio: 1994883000
   - apto: "F-501"
     nivel: 5
     area: 114.24
