@@ -4,6 +4,7 @@
 import os
 import yaml
 import logging
+from datetime import datetime, timedelta, timezone
 from anthropic import AsyncAnthropic
 from dotenv import load_dotenv
 
@@ -207,6 +208,22 @@ async def generar_respuesta(mensaje: str, historial: list[dict], perfil: dict | 
         return obtener_mensaje_fallback()
 
     system_prompt = cargar_system_prompt()
+
+    # Inyectar fecha actual en zona horaria Colombia (UTC-5)
+    _COL = timezone(timedelta(hours=-5))
+    _ahora = datetime.now(_COL)
+    _dias = ["lunes","martes","miércoles","jueves","viernes","sábado","domingo"]
+    _meses = ["enero","febrero","marzo","abril","mayo","junio",
+              "julio","agosto","septiembre","octubre","noviembre","diciembre"]
+    _fecha_hoy = _ahora.strftime("%Y-%m-%d")
+    _dia_nombre = _dias[_ahora.weekday()]
+    _fecha_legible = f"{_dia_nombre} {_ahora.day} de {_meses[_ahora.month-1]} de {_ahora.year}"
+    system_prompt += (
+        f"\n\n## Fecha y hora actual\n"
+        f"Hoy es {_fecha_legible} ({_fecha_hoy}), Colombia (UTC-5).\n"
+        f"Usa esta fecha como referencia exacta para calcular 'mañana', 'el próximo lunes', "
+        f"'el sábado', 'la próxima semana', etc. Convierte SIEMPRE a formato YYYY-MM-DD."
+    )
 
     if idioma == "en":
         system_prompt += (
