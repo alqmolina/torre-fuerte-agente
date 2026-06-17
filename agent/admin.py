@@ -2477,9 +2477,7 @@ async def lead_editar_form(telefono: str, request: Request):
     if not _autenticado(request):
         return RedirectResponse("/admin/login", status_code=302)
 
-    perfil = await obtener_perfil_lead(telefono)
-    if not perfil:
-        return RedirectResponse(f"/admin/chat/{telefono}", status_code=302)
+    perfil = await obtener_perfil_lead(telefono) or {}
 
     tel_esc = _esc(telefono)
     nombre_v = _esc(perfil.get("nombre") or "")
@@ -2603,14 +2601,25 @@ async def lead_editar_save(
 ):
     if not _autenticado(request):
         return RedirectResponse("/admin/login", status_code=302)
-    await actualizar_lead(
-        telefono,
-        nombre=nombre.strip() or None,
-        temperatura=temperatura.strip() or None,
-        intencion=intencion.strip() or None,
-        apto=apto.strip() if apto.strip() != "" else "",
-        habitaciones=habitaciones.strip() if habitaciones.strip() != "" else "",
-    )
+    from agent.memory import lead_existe as _lead_existe
+    if await _lead_existe(telefono):
+        await actualizar_lead(
+            telefono,
+            nombre=nombre.strip() or None,
+            temperatura=temperatura.strip() or None,
+            intencion=intencion.strip() or None,
+            apto=apto.strip() if apto.strip() != "" else "",
+            habitaciones=habitaciones.strip() if habitaciones.strip() != "" else "",
+        )
+    else:
+        await guardar_lead(
+            telefono,
+            nombre=nombre.strip(),
+            temperatura=temperatura.strip() or "frio",
+            intencion=intencion.strip(),
+            apto=apto.strip(),
+            habitaciones=habitaciones.strip(),
+        )
     return RedirectResponse(f"/admin/chat/{telefono}", status_code=303)
 
 
