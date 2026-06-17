@@ -15,7 +15,7 @@ load_dotenv()
 from agent.brain import generar_respuesta, generar_resumen_handoff
 from agent.memory import (
     inicializar_db, guardar_mensaje, obtener_historial,
-    guardar_lead, lead_existe, obtener_perfil_lead,
+    guardar_lead, lead_existe, actualizar_lead, obtener_perfil_lead,
     guardar_idioma, obtener_idioma, obtener_todos_los_leads,
     activar_handoff, desactivar_handoff, esta_en_handoff,
     debe_enviar_aviso_handoff, registrar_aviso_handoff,
@@ -40,6 +40,7 @@ from agent.tools import (
     obtener_urls_renders,
     enviar_email_lead,
     enviar_email_handoff,
+    enviar_email_visita,
     exportar_leads_excel,
 )
 
@@ -236,7 +237,8 @@ async def _notificar_visita_asesor(telefono: str, nombre: str, fecha: str, hora:
     try:
         await proveedor.enviar_mensaje(ASESOR_WHATSAPP.lstrip("+"), msg)
     except Exception as e:
-        logger.warning(f"No se pudo notificar visita al asesor: {e}")
+        logger.warning(f"No se pudo notificar visita al asesor (WA): {e}")
+    enviar_email_visita(telefono, nombre, fecha, hora, notas, tipo)
 
 
 async def _tarea_recordatorios_visitas() -> None:
@@ -549,26 +551,39 @@ async def _procesar_mensaje_canal(msg, prov) -> None:
         else:
             await prov.enviar_mensaje(msg.telefono, "Lo siento, no encontré renders para esa opción.")
 
-    if lead_data and not await lead_existe(msg.telefono):
-        await guardar_lead(
-            msg.telefono,
-            lead_data["nombre"],
-            lead_data.get("email", ""),
-            lead_data.get("apto", ""),
-            lead_data.get("habitaciones", ""),
-            lead_data.get("temperatura", ""),
-            lead_data.get("intencion", ""),
-        )
-        enviar_email_lead(
-            msg.telefono,
-            lead_data["nombre"],
-            lead_data.get("email", ""),
-            lead_data.get("apto", ""),
-            lead_data.get("habitaciones", ""),
-            lead_data.get("temperatura", ""),
-            lead_data.get("intencion", ""),
-        )
-        logger.info(f"Lead registrado: {lead_data['nombre']} ({msg.telefono})")
+    if lead_data:
+        ya_existe = await lead_existe(msg.telefono)
+        if not ya_existe:
+            await guardar_lead(
+                msg.telefono,
+                lead_data["nombre"],
+                lead_data.get("email", ""),
+                lead_data.get("apto", ""),
+                lead_data.get("habitaciones", ""),
+                lead_data.get("temperatura", ""),
+                lead_data.get("intencion", ""),
+            )
+            enviar_email_lead(
+                msg.telefono,
+                lead_data["nombre"],
+                lead_data.get("email", ""),
+                lead_data.get("apto", ""),
+                lead_data.get("habitaciones", ""),
+                lead_data.get("temperatura", ""),
+                lead_data.get("intencion", ""),
+            )
+            logger.info(f"Lead registrado: {lead_data['nombre']} ({msg.telefono})")
+        else:
+            # Lead ya existe — actualizar campos que llegaron con datos nuevos
+            await actualizar_lead(
+                msg.telefono,
+                nombre=lead_data["nombre"] or None,
+                temperatura=lead_data.get("temperatura") or None,
+                intencion=lead_data.get("intencion") or None,
+                apto=lead_data.get("apto") or None,
+                habitaciones=lead_data.get("habitaciones") or None,
+            )
+            logger.info(f"Lead actualizado: {lead_data['nombre']} ({msg.telefono})")
         todos_los_leads = await obtener_todos_los_leads()
         exportar_leads_excel(todos_los_leads)
 
@@ -576,6 +591,30 @@ async def _procesar_mensaje_canal(msg, prov) -> None:
         nombre_v = visita_data["nombre"]
         if perfil and perfil.get("nombre"):
             nombre_v = perfil["nombre"]
+
+        # Auto-registrar lead si aún no existe (visita agendada sin [LEAD:] previo)
+        if nombre_v and nombre_v.lower() != "lead" and not await lead_existe(msg.telefono):
+            await guardar_lead(
+                msg.telefono,
+                nombre_v,
+                (perfil or {}).get("email", ""),
+                (perfil or lead_data or {}).get("apto", ""),
+                (perfil or lead_data or {}).get("habitaciones", ""),
+                (perfil or lead_data or {}).get("temperatura", "tibio"),
+                (perfil or lead_data or {}).get("intencion", ""),
+            )
+            enviar_email_lead(
+                msg.telefono, nombre_v,
+                (perfil or {}).get("email", ""),
+                (perfil or lead_data or {}).get("apto", ""),
+                (perfil or lead_data or {}).get("habitaciones", ""),
+                (perfil or lead_data or {}).get("temperatura", "tibio"),
+                (perfil or lead_data or {}).get("intencion", ""),
+            )
+            logger.info(f"Lead auto-registrado desde visita: {nombre_v} ({msg.telefono})")
+            todos_los_leads = await obtener_todos_los_leads()
+            exportar_leads_excel(todos_los_leads)
+
         visita_id = await guardar_visita(
             msg.telefono,
             nombre_v,

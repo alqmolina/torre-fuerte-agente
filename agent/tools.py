@@ -352,6 +352,106 @@ def enviar_email_handoff(
         return False
 
 
+def enviar_email_visita(
+    telefono: str,
+    nombre: str,
+    fecha: str,
+    hora: str,
+    notas: str = "",
+    tipo: str = "nueva",
+) -> bool:
+    """Notifica al asesor por email cuando se agenda, reagenda o cancela una visita."""
+    if not all([RESEND_API_KEY, EMAIL_LEADS]):
+        logger.warning("RESEND_API_KEY o EMAIL_LEADS no configurados — no se envió email visita")
+        return False
+    try:
+        negocio = _nombre_corto()
+        tel_limpio = telefono.lstrip("+")
+        base_url = os.getenv("BASE_URL", "")
+        es_llamada = "📞" in (notas or "")
+
+        if tipo == "cancela":
+            titulo, icono_tipo = "VISITA CANCELADA", "❌"
+        elif tipo == "reagenda":
+            titulo, icono_tipo = "VISITA REAGENDADA", "🔄"
+        elif es_llamada:
+            titulo, icono_tipo = "LLAMADA AGENDADA", "📞"
+        else:
+            titulo, icono_tipo = "VISITA AGENDADA", "📅"
+
+        fecha_fmt = fecha
+        try:
+            d = datetime.strptime(fecha, "%Y-%m-%d")
+            meses = ["enero","febrero","marzo","abril","mayo","junio",
+                     "julio","agosto","septiembre","octubre","noviembre","diciembre"]
+            dias = ["lunes","martes","miércoles","jueves","viernes","sábado","domingo"]
+            fecha_fmt = f"{dias[d.weekday()]} {d.day} de {meses[d.month-1]} de {d.year}"
+        except Exception:
+            pass
+
+        chat_link = f"{base_url}/admin/chat/{telefono}" if base_url else ""
+        fila_fecha = (
+            f'<tr><td style="padding:8px 0;color:#666;width:140px">📅 Fecha</td>'
+            f'<td style="padding:8px 0"><strong>{fecha_fmt}</strong></td></tr>'
+            f'<tr><td style="padding:8px 0;color:#666">⏰ Hora</td>'
+            f'<td style="padding:8px 0"><strong>{hora}</strong></td></tr>'
+        ) if fecha else ""
+        fila_notas = (
+            f'<tr><td style="padding:8px 0;color:#666">📝 Notas</td>'
+            f'<td style="padding:8px 0">{notas}</td></tr>'
+        ) if notas else ""
+
+        cuerpo_html = f"""
+<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+  <div style="background:#1a3c5e;padding:20px;border-radius:8px 8px 0 0">
+    <h2 style="color:#fff;margin:0">{icono_tipo} {titulo}</h2>
+    <p style="color:#aac8e4;margin:4px 0 0">{negocio}</p>
+  </div>
+  <div style="background:#f5f8fb;padding:24px;border-radius:0 0 8px 8px;border:1px solid #dce8f3">
+    <table style="width:100%;border-collapse:collapse">
+      <tr><td style="padding:8px 0;color:#666;width:140px">📱 Teléfono</td>
+          <td style="padding:8px 0;font-weight:bold;font-size:18px">+{tel_limpio}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">👤 Nombre</td>
+          <td style="padding:8px 0">{nombre or 'Sin nombre'}</td></tr>
+      {fila_fecha}{fila_notas}
+      <tr><td style="padding:8px 0;color:#666">🕐 Registrado</td>
+          <td style="padding:8px 0">{_ahora_colombia()}</td></tr>
+    </table>
+    {'<div style="margin-top:20px;text-align:center"><a href="' + chat_link + '" style="display:inline-block;background:#1a3c5e;color:#fff;padding:12px 28px;border-radius:6px;text-decoration:none;font-weight:bold">Ver chat en el panel</a></div>' if chat_link else ''}
+  </div>
+</div>"""
+        cuerpo_texto = (
+            f"{icono_tipo} {titulo} — {negocio}\n\n"
+            f"Teléfono: +{tel_limpio}\n"
+            f"Nombre:   {nombre or 'Sin nombre'}\n"
+            + (f"Fecha:    {fecha_fmt}\n" if fecha else "")
+            + (f"Hora:     {hora}\n" if hora else "")
+            + (f"Notas:    {notas}\n" if notas else "")
+            + f"Registro: {_ahora_colombia()}\n"
+            + (f"\nVer chat: {chat_link}\n" if chat_link else "")
+        )
+        r = httpx.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {RESEND_API_KEY}"},
+            json={
+                "from": f"{negocio} <onboarding@resend.dev>",
+                "to": [EMAIL_LEADS],
+                "subject": f"{icono_tipo} {titulo} — {nombre or tel_limpio}",
+                "html": cuerpo_html,
+                "text": cuerpo_texto,
+            },
+            timeout=15,
+        )
+        if r.status_code == 200:
+            logger.info(f"Email visita enviado: {nombre} ({telefono}) tipo={tipo}")
+            return True
+        logger.error(f"Error Resend visita: {r.status_code} — {r.text}")
+        return False
+    except Exception as e:
+        logger.error(f"Error enviando email visita: {e}")
+        return False
+
+
 def obtener_disponibilidad() -> list[dict]:
     """Retorna la lista de apartamentos desde config/business.yaml → disponibilidad."""
     return _cfg().get("disponibilidad", [])
